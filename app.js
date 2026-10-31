@@ -66,7 +66,7 @@ const NEW_WILD = () => ({ x: -4.5, z: 4, rot: 90, w: 4, h: 3, b: 0 });
 // Every key here is a URL-hash key: add new keys rather than renaming old ones.
 const DEFAULTS = {
   mode: 'simple',
-  wallW: 10, wallH: 4, wallBottom: 0, curve: 0, pitch: 1.5,
+  wallW: 10, wallH: 4, wallBottom: 0, curve: 0, pitch: 1.5, wallZ: 0,
   wallMode: 'simple', wallPts: [],
   wildOn: false, wild: [],
   ceilOn: false, ceil: { x: 0, z: 3, w: 10, d: 6, h: 4.5, rot: 0 }, ceilPitch: 2.6,
@@ -86,6 +86,7 @@ const SLIDERS = {
   'ctl-wall-simple': [
     { key: 'wallW', label: 'Width', min: 1, max: 30, step: 0.1, unit: 'm' },
     { key: 'curve', label: 'Curvature (total arc)', min: -90, max: 300, step: 1, unit: '°' },
+    { key: 'wallZ', label: 'Position back / forward (Z)', min: -10, max: 20, step: 0.05, unit: 'm' },
   ],
   'ctl-wall': [
     { key: 'wallH', label: 'Height', min: 0.5, max: 12, step: 0.1, unit: 'm' },
@@ -122,9 +123,10 @@ const SLIDERS = {
   's-focus': [
     { key: 'focus', label: 'Focus distance', min: 0.3, max: 60, step: 0.01, unit: 'm', log: true },
   ],
+  // Distances from the wall's centre line, wherever the wall has been moved to.
   's-place': [
-    { key: 'subZ', label: 'Talent → wall', min: -20, max: 12, step: 0.05, unit: 'm', dyn: 'z' },
-    { key: 'camZ', label: 'Camera → wall', min: -20, max: 12, step: 0.05, unit: 'm', dyn: 'z' },
+    { label: 'Talent → wall', min: 0.2, max: 30, step: 0.05, unit: 'm', get: () => state.subZ - wallRefZ(), set: v => { state.subZ = v + wallRefZ(); } },
+    { label: 'Camera → wall', min: 0.3, max: 30, step: 0.05, unit: 'm', get: () => state.camZ - wallRefZ(), set: v => { state.camZ = v + wallRefZ(); } },
   ],
 };
 
@@ -152,6 +154,7 @@ const wrapDeg = a => ((((a + 180) % 360) + 360) % 360) - 180;
 /* ------------------------------------------------------------------ */
 
 const wallShape = () => Optics.wallShape(state.wallW, state.curve);
+const wallRefZ = () => (state.wallMode === 'custom' ? 0 : state.wallZ);
 
 // The main wall: flat/curved (simple) or a chain of flat panels (custom).
 function mainWall() {
@@ -165,13 +168,15 @@ function mainWall() {
       ray: (ox, oz, dx, dz) => Optics.rayPoly(poly, ox, oz, dx, dz),
     };
   }
+  // Flat/curved shapes are built centred on z = 0, then moved back or forward by wallZ.
   const shape = wallShape();
+  const off = state.wallZ;
   return {
-    custom: false, shape, L: state.wallW,
-    plan: u => Optics.wallPlan(shape, u),
-    clearance: (x, z) => Optics.frontClearance(shape, x, z),
-    keepInFront: (x, z, m) => Optics.keepInFront(shape, x, z, m),
-    ray: (ox, oz, dx, dz) => Optics.rayWall(shape, ox, oz, dx, dz),
+    custom: false, shape, L: state.wallW, off,
+    plan: u => { const p = Optics.wallPlan(shape, u); return { ...p, z: p.z + off }; },
+    clearance: (x, z) => Optics.frontClearance(shape, x, z - off),
+    keepInFront: (x, z, m) => { const p = Optics.keepInFront(shape, x, z - off, m); return { x: p.x, z: p.z + off }; },
+    ray: (ox, oz, dx, dz) => { const h = Optics.rayWall(shape, ox, oz - off, dx, dz); return h && { ...h, z: h.z + off }; },
   };
 }
 
@@ -655,10 +660,10 @@ const isActive = (which, id) => hover[which] === id || drag?.target === id;
 function frontClip(ctx, V, mw, w, h) {
   ctx.beginPath();
   if (!mw.custom) {
-    const shape = mw.shape;
-    if (shape.flat) ctx.rect(0, V.Y(0), w, h);
-    else if (shape.R > 0) ctx.arc(V.X(0), V.Y(shape.R), shape.R * V.k, 0, Math.PI * 2);
-    else { ctx.rect(0, 0, w, h); ctx.arc(V.X(0), V.Y(shape.R), -shape.R * V.k, 0, Math.PI * 2, true); }
+    const shape = mw.shape, off = mw.off;
+    if (shape.flat) ctx.rect(0, V.Y(off), w, h);
+    else if (shape.R > 0) ctx.arc(V.X(0), V.Y(shape.R + off), shape.R * V.k, 0, Math.PI * 2);
+    else { ctx.rect(0, 0, w, h); ctx.arc(V.X(0), V.Y(shape.R + off), -shape.R * V.k, 0, Math.PI * 2, true); }
     ctx.clip('evenodd');
     return;
   }
@@ -793,7 +798,7 @@ function drawTop(o) {
   const c0 = mw.plan(0.5); mid = { x: c0.x, z: top };
   const curveTxt = mw.custom ? ` · ${mw.poly.segs.length} flat sections` : mw.shape.flat ? '' : ` · ${Math.abs(state.curve)}° ${state.curve > 0 ? 'concave' : 'convex'}`;
   label(ctx, `LED wall ${mw.L.toFixed(1)} m × ${state.wallH.toFixed(1)} m${curveTxt}`,
-    V.X(mid.x), Math.max(12, V.Y(Math.min(top, 0)) - 9), colors.muted, 'center');
+    V.X(mid.x), Math.max(12, V.Y(Math.min(top, wallRefZ())) - 9), colors.muted, 'center');
   if (mw.custom && adv) {
     for (const g of mw.poly.segs) {
       // On the stage side of each run, clear of the wall's own label behind it.
@@ -913,13 +918,29 @@ function drawSide(o) {
   const ceil = o.sections.ceil;
   const HS = [];
 
+  // Surfaces the line of sight doesn't cross are shown "off to the side": their
+  // extent along the view direction, at their real height.
+  const hd = o.cb.heading;
+  const along = p => (p.x - state.camX) * hd.x + (p.z - state.camZ) * hd.z;
+  const crossed = new Set(o.sections.walls.map(x => x.S.id));
+  const ghosts = [];
+  for (const S of o.surfs) {
+    if (S.main || crossed.has(S.id) || (S.kind === 'h' && ceil)) continue;
+    const ss = (S.kind === 'v' ? [S.plan(0), S.plan(1)] : S.corners).map(along);
+    const s1 = Math.max(...ss);
+    if (s1 > 0) ghosts.push({ S, s0: Math.max(Math.min(...ss), 0), s1 });
+  }
+
   const reach = [sec ? Math.min(sec.t, 80) : Math.max(subDist * 1.5, 6)];
   for (const { hit } of o.sections.walls) reach.push(Math.min(hit.t, 80));
   if (ceil) reach.push(Math.min(ceil.t1, 80));
+  for (const g of ghosts) reach.push(Math.min(g.s1, 80));
   const sMax = Math.max(...reach) + 1.2;
   const tops = [wallTop, state.camY, state.subH, state.aimH];
   for (const { S } of o.sections.walls) tops.push(S.bottom + S.height);
   if (ceil) tops.push(state.ceil.h + 0.3);
+  for (const g of ghosts) tops.push(g.S.kind === 'v' ? g.S.bottom + g.S.height : state.ceil.h + 0.3);
+  const adv = state.mode === 'advanced';
   const yMax = Math.max(...tops) + 0.8;
   const V = makeView(w, h, -1.2, sMax, -0.4, yMax, true);
   sideView = V;
@@ -1006,6 +1027,42 @@ function drawSide(o) {
     ctx.lineWidth = 1;
     ctx.strokeRect(x0, V.Y(top), x1 - x0, S.height * V.k);
     label(ctx, S.main ? 'LED wall' : `Wild ${S.idx + 1}`, x0 - 6, V.Y(top) - 10, colors.muted, 'right');
+    if (adv) {
+      const id = S.main ? 'wall:side' : `wild:${S.idx}:side`;
+      // Near the top of the wall, clear of the talent, the aim point and the focus markers.
+      const hx = (x0 + x1) / 2, hy = V.Y(S.bottom + S.height) + 12 * ui();
+      handle(ctx, hx, hy, isActive('side', id));
+      HS.push({ id, x: hx, y: hy });
+    }
+  }
+
+  // Off to the side: outlines at their distance along the view and real height.
+  const tsG = Math.max(0.12, 5 / V.k);
+  let ghostRow = 0;
+  for (const g of ghosts) {
+    const xa = V.X(g.s0), xb = V.X(g.s1);
+    const isWall = g.S.kind === 'v';
+    const yTop = isWall ? g.S.bottom + g.S.height : state.ceil.h + tsG;
+    const yBot = isWall ? g.S.bottom : state.ceil.h;
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = isWall ? colors.wall : colors.ceil;
+    ctx.fillRect(xa, V.Y(yTop), Math.max(xb - xa, 3), (yTop - yBot) * V.k);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = isWall ? colors.muted : colors.ceil;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(xa, V.Y(yTop), Math.max(xb - xa, 3), (yTop - yBot) * V.k);
+    ctx.restore();
+    // Labels sit along the bottom edge (stacked if several), clear of the ceiling and focus labels.
+    const ly = isWall ? V.Y(yBot) - 10 - 15 * ui() * ghostRow++ : V.Y(yTop) - 10;
+    label(ctx, `${isWall ? `Wild ${g.S.idx + 1}` : 'LED ceiling'} · off to the side`, xa + 4, ly, colors.muted);
+    if (adv) {
+      const id = isWall ? `wild:${g.S.idx}:side` : 'ceil:side';
+      const hx = V.X((g.s0 + g.s1) / 2), hy = isWall ? V.Y(yTop) + 12 * ui() : V.Y((yTop + yBot) / 2);
+      handle(ctx, hx, hy, isActive('side', id));
+      HS.push({ id, x: hx, y: hy });
+    }
   }
   if (!o.sections.walls.length) label(ctx, 'Line of sight does not reach the wall', w - 12, 16, colors.muted, 'right');
 
@@ -1026,10 +1083,10 @@ function drawSide(o) {
     ctx.lineWidth = 1;
     ctx.strokeRect(V.X(ceil.t0), V.Y(yb + ts), (ceil.t1 - ceil.t0) * V.k, ts * V.k);
     label(ctx, 'LED ceiling', V.X(ceil.t0) + 4, V.Y(yb + ts) - 10, colors.muted);
-    if (state.mode === 'advanced') {
+    if (adv) {
       const hx = V.X((ceil.t0 + ceil.t1) / 2), hy = V.Y(yb);
-      handle(ctx, hx, hy, isActive('side', 'ceil:h'));
-      HS.push({ id: 'ceil:h', x: hx, y: hy });
+      handle(ctx, hx, hy, isActive('side', 'ceil:side'));
+      HS.push({ id: 'ceil:side', x: hx, y: hy });
     }
   }
 
@@ -1334,7 +1391,8 @@ function buildControls() {
   // Wall shape toggle
   document.querySelectorAll('button[data-wallmode]').forEach(b => b.addEventListener('click', () => {
     const m = b.dataset.wallmode;
-    if (m === 'custom' && state.wallMode !== 'custom') state.wallPts = Optics.arcPoints(state.wallW, state.curve, 7);
+    // Keep the wall where it is: the shape's points include its back/forward position.
+    if (m === 'custom' && state.wallMode !== 'custom') state.wallPts = Optics.arcPoints(state.wallW, state.curve, 7).map(p => ({ x: p.x, z: +(p.z + state.wallZ).toFixed(3) }));
     state.wallMode = m;
     rebuildLists();
     update();
@@ -1579,9 +1637,30 @@ function applyDrag(which, target, sx, sy) {
   if (['near', 'far', 'focus'].includes(target)) { dragDepth(target, depthAt(which, sx, sy)); return; }
   if (which === 'side') {
     const y = +sideView.B(sy).toFixed(2);
-    if (target === 'camera') state.camY = y;
-    else if (target === 'aim') state.aimH = y;
-    else if (target === 'ceil:h') state.ceil.h = y;
+    if (target === 'camera') { state.camY = y; return; }
+    if (target === 'aim') { state.aimH = y; return; }
+    // Layout in the side view: left/right is back/forward along the line of sight.
+    // Measured against the view as it was when the drag began, because the view
+    // rescales as things move.
+    const { V, s0, y0, hx, hz, start } = drag;
+    const ds = V.A(sx) - s0, dy = V.B(sy) - y0;
+    const r2 = v => +v.toFixed(2);
+    if (target === 'wall:side') {
+      // The main wall slides along z (straight back or forward) so that where the
+      // line of sight meets it moves by ds.
+      const dz = ds / (Math.abs(hz) < 0.3 ? 0.3 * Math.sign(hz || -1) : hz);
+      if (state.wallMode === 'custom') state.wallPts = start.pts.map(p => ({ x: p.x, z: r2(p.z + dz) }));
+      else state.wallZ = r2(start.wallZ + dz);
+      return;
+    }
+    const [kind, idx] = target.split(':');
+    if (kind === 'wild') {
+      const wl = state.wild[+idx];
+      wl.x = r2(start.x + hx * ds); wl.z = r2(start.z + hz * ds); wl.b = r2(clamp(start.b + dy, 0, 5));
+    } else if (kind === 'ceil') {
+      const c = state.ceil;
+      c.x = r2(start.x + hx * ds); c.z = r2(start.z + hz * ds); c.h = r2(clamp(start.h + dy, 1.5, 12));
+    }
     return;
   }
   const x = +topView.A(sx).toFixed(2), z = +topView.B(sy).toFixed(2);
@@ -1608,6 +1687,7 @@ const HINTS = {
   camera: 'Moving the camera', subject: 'Moving the talent', aim: 'Moving the aim point',
   near: 'Dragging the near limit: focus and aperture follow', far: 'Dragging the far limit: focus and aperture follow',
   focus: 'Dragging the focus distance',
+  'wall:side': 'Moving the LED wall back / forward', 'ceil:side': 'Moving the ceiling: left/right = back/forward, up/down = height',
 };
 
 function setupDrag(cv, which) {
@@ -1622,6 +1702,18 @@ function setupDrag(cv, which) {
     const target = hitTest(which, sx, sy);
     if (!target) return;
     drag = { which, target };
+    if (which === 'side') {
+      // Starting point for side-view layout drags (see applyDrag).
+      const [kind, idx] = target.split(':');
+      drag.V = sideView;
+      drag.s0 = sideView.A(sx);
+      drag.y0 = sideView.B(sy);
+      drag.hx = lastO.cb.heading.x;
+      drag.hz = lastO.cb.heading.z;
+      drag.start = kind === 'wild' ? { ...state.wild[+idx] }
+        : kind === 'ceil' ? { ...state.ceil }
+        : { wallZ: state.wallZ, pts: state.wallPts.map(p => ({ ...p })) };
+    }
     cv.setPointerCapture(e.pointerId);
     e.preventDefault();
     update();
@@ -1727,8 +1819,8 @@ function update(persist = true) {
   if (state.mode === 'advanced') drawSide(o);
   renderReadouts(o);
   sync(o);
-  const hint = document.getElementById('drag-hint');
-  if (hint) hint.textContent = drag ? (HINTS[drag.target] || 'Moving') : '';
+  const msg = drag ? (HINTS[drag.target] || (drag.target.endsWith(':side') ? 'Moving the wild wall: left/right = back/forward, up/down = bottom edge' : 'Moving')) : '';
+  document.querySelectorAll('.drag-hint').forEach(el => { el.textContent = el.dataset.view === drag?.which ? msg : ''; });
   if (persist) saveHash();
 }
 

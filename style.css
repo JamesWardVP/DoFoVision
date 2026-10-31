@@ -141,6 +141,7 @@ body[data-vft-tool] .topbar .brand { display: none; }
 /* Simple / Advanced */
 .mode-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; flex: none; }
 .mode-toggle button {
+  margin: 0; /* the general button rule adds a top margin, which pushed these down and clipped them */
   border-radius: 0;
   font: 700 13px/1 system-ui, sans-serif;
   letter-spacing: 0.04em;

@@ -94,7 +94,7 @@
         <h2>Wild walls</h2>
         <label class="switch"><input id="wildOn" type="checkbox"><span>Show wild walls</span></label>
         <div class="wild-body">
-          <p class="hint">Freestanding LED panels, e.g. for reflections. Drag the square to move one and the round handle to turn it. They use the wall's pixel pitch.</p>
+          <p class="hint">Freestanding LED panels, e.g. for reflections. Drag the square to move one and the round handle to turn it. In the side view, drag its square back / forward or up / down. They use the wall's pixel pitch.</p>
           <div id="wild-list"></div>
           <button type="button" id="wild-add">+ Add wild wall</button>
         </div>
@@ -104,7 +104,7 @@
         <h2>LED ceiling</h2>
         <label class="switch"><input id="ceilOn" type="checkbox"><span>Show LED ceiling</span></label>
         <div class="ceil-body">
-          <p class="hint">Drag the square to move it and the round corner to resize it in the top view; drag it up or down in the side view.</p>
+          <p class="hint">Drag the square to move it and the round corner to resize it in the top view. In the side view, drag its square: up / down sets the height, left / right moves it back / forward.</p>
           <div id="ctl-ceil"></div>
           <label class="field inline"><span>Ceiling pixel pitch</span><span class="val"><input id="ceilPitch" type="number" min="0.3" max="20" step="0.1"> mm</span></label>
         </div>
@@ -152,7 +152,7 @@
           <h2>Top view</h2>
           <span class="hint adv-only">Drag the camera, the subject, or the near / far / focus points</span>
           <span class="hint simple-only">Drag the camera or the talent · drag the green near / far points to change the depth of field</span>
-          <span class="drag-hint" id="drag-hint" aria-live="polite"></span>
+          <span class="drag-hint" data-view="top" aria-live="polite"></span>
         </div>
         <canvas id="top" aria-label="Top-down view of the LED volume, camera, subject, field of view and depth of field"></canvas>
       </div>
@@ -160,7 +160,8 @@
       <div class="view adv-only">
         <div class="view-head">
           <h2>Side view</h2>
-          <span class="hint">Section along the line of sight · drag the camera (height), the aim point, or the near / far / focus points</span>
+          <span class="hint">Section along the line of sight · drag the camera (height), the aim point, the near / far / focus points, or the square handles to move walls and the ceiling (left / right = back / forward)</span>
+          <span class="drag-hint" data-view="side" aria-live="polite"></span>
         </div>
         <canvas id="side" aria-label="Side view along the camera's line of sight"></canvas>
       </div>

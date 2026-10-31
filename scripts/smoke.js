@@ -186,6 +186,32 @@ async function launch() {
   v = await page.evaluate(() => [state.mode, state.focusAuto]);
   check(v[0] === 'simple' && v[1] === true, 'simple mode: follow-focus switch works');
 
+  // Side view: off-axis wild walls are shown, and walls / ceiling drag back-forward and up-down.
+  await page.click('button[data-mode="advanced"]');
+  await page.evaluate(() => {
+    Object.assign(state, structuredClone(DEFAULTS), {
+      mode: 'advanced', camX: 0, camZ: 7, camY: 1.6, subX: 0, subZ: 4, aimH: 1.6,
+      wildOn: true, wild: [{ x: -4.5, z: 4, rot: 90, w: 4, h: 3, b: 0 }],
+      ceilOn: true, ceil: { x: 0, z: 3, w: 6, d: 4, h: 4, rot: 0 },
+    });
+    rebuildLists(); update();
+  });
+  const sideDrag = async (id, dx, dy) => {
+    const at = await page.evaluate(id => { const r = sideCanvas.getBoundingClientRect(); const h = handles.side.find(h => h.id === id); return h && [r.x + h.x, r.y + h.y]; }, id);
+    if (!at) return false;
+    await page.mouse.move(at[0], at[1]); await page.mouse.down();
+    await page.mouse.move(at[0] + dx, at[1] + dy, { steps: 6 }); await page.mouse.up();
+    return true;
+  };
+  const before2 = await page.evaluate(() => ({ wild: { ...state.wild[0] }, ceil: { ...state.ceil }, wallZ: state.wallZ }));
+  check(await sideDrag('wild:0:side', 0, -40), 'side view shows an off-to-the-side wild wall with a handle');
+  check(await sideDrag('ceil:side', 60, -30), 'side view has a ceiling handle');
+  check(await sideDrag('wall:side', -50, 0), 'side view has a main wall handle');
+  const after2 = await page.evaluate(() => ({ wild: { ...state.wild[0] }, ceil: { ...state.ceil }, wallZ: state.wallZ }));
+  check(after2.wild.b > before2.wild.b, `dragging a wild wall up raises it (bottom ${before2.wild.b} → ${after2.wild.b} m)`);
+  check(after2.ceil.h > before2.ceil.h && after2.ceil.z < before2.ceil.z, `ceiling moves up and further away (h ${before2.ceil.h} → ${after2.ceil.h}, z ${before2.ceil.z} → ${after2.ceil.z})`);
+  check(after2.wallZ > before2.wallZ, `dragging the wall left brings it closer (wallZ ${before2.wallZ} → ${after2.wallZ})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} check(s) failed` : `\nAll checks passed. Screenshots in screenshots/`);
   process.exit(failures ? 1 : 0);
