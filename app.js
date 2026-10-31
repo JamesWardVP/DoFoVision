@@ -416,8 +416,11 @@ function sightSections(o) {
       const hit = S.ray(state.camX, state.camZ, h.x, h.z);
       if (hit) out.walls.push({ S, hit });
     } else {
+      // Traced both ways, so a ceiling over or behind the camera shows in full
+      // (negative t = behind the camera).
       const iv = Optics.rayConvexInterval(S.corners, state.camX, state.camZ, h.x, h.z);
-      if (iv) out.ceil = { S, t0: iv[0], t1: iv[1] };
+      const back = Optics.rayConvexInterval(S.corners, state.camX, state.camZ, -h.x, -h.z);
+      if (iv || back) out.ceil = { S, t0: back ? -back[1] : iv[0], t1: iv ? iv[1] : -back[0] };
     }
   }
   return out;
@@ -926,9 +929,9 @@ function drawSide(o) {
   const ghosts = [];
   for (const S of o.surfs) {
     if (S.main || crossed.has(S.id) || (S.kind === 'h' && ceil)) continue;
+    // Negative distances are behind the camera; they are kept and drawn there.
     const ss = (S.kind === 'v' ? [S.plan(0), S.plan(1)] : S.corners).map(along);
-    const s1 = Math.max(...ss);
-    if (s1 > 0) ghosts.push({ S, s0: Math.max(Math.min(...ss), 0), s1 });
+    ghosts.push({ S, s0: Math.max(Math.min(...ss), -80), s1: Math.min(Math.max(...ss), 80) });
   }
 
   const reach = [sec ? Math.min(sec.t, 80) : Math.max(subDist * 1.5, 6)];
@@ -942,7 +945,11 @@ function drawSide(o) {
   for (const g of ghosts) tops.push(g.S.kind === 'v' ? g.S.bottom + g.S.height : state.ceil.h + 0.3);
   const adv = state.mode === 'advanced';
   const yMax = Math.max(...tops) + 0.8;
-  const V = makeView(w, h, -1.2, sMax, -0.4, yMax, true);
+  // The view extends behind the camera for anything placed there.
+  const behind = [-1.2];
+  for (const g of ghosts) behind.push(g.s0 - 1);
+  if (ceil) behind.push(ceil.t0 - 1);
+  const V = makeView(w, h, Math.min(...behind), sMax, -0.4, yMax, true);
   sideView = V;
   drawGrid(ctx, V, w, h);
 
@@ -1056,7 +1063,8 @@ function drawSide(o) {
     ctx.restore();
     // Labels sit along the bottom edge (stacked if several), clear of the ceiling and focus labels.
     const ly = isWall ? V.Y(yBot) - 10 - 15 * ui() * ghostRow++ : V.Y(yTop) - 10;
-    label(ctx, `${isWall ? `Wild ${g.S.idx + 1}` : 'LED ceiling'} · off to the side`, xa + 4, ly, colors.muted);
+    const where = g.s1 <= 0 ? 'behind the camera' : 'off to the side';
+    label(ctx, `${isWall ? `Wild ${g.S.idx + 1}` : 'LED ceiling'} · ${where}`, xa + 4, ly, colors.muted);
     if (adv) {
       const id = isWall ? `wild:${g.S.idx}:side` : 'ceil:side';
       const hx = V.X((g.s0 + g.s1) / 2), hy = isWall ? V.Y(yTop) + 12 * ui() : V.Y((yTop + yBot) / 2);
@@ -1651,6 +1659,7 @@ function applyDrag(which, target, sx, sy) {
       const dz = ds / (Math.abs(hz) < 0.3 ? 0.3 * Math.sign(hz || -1) : hz);
       if (state.wallMode === 'custom') state.wallPts = start.pts.map(p => ({ x: p.x, z: r2(p.z + dz) }));
       else state.wallZ = r2(start.wallZ + dz);
+      state.wallBottom = r2(clamp(start.wallBottom + dy, 0, 3));
       return;
     }
     const [kind, idx] = target.split(':');
@@ -1687,7 +1696,7 @@ const HINTS = {
   camera: 'Moving the camera', subject: 'Moving the talent', aim: 'Moving the aim point',
   near: 'Dragging the near limit: focus and aperture follow', far: 'Dragging the far limit: focus and aperture follow',
   focus: 'Dragging the focus distance',
-  'wall:side': 'Moving the LED wall back / forward', 'ceil:side': 'Moving the ceiling: left/right = back/forward, up/down = height',
+  'wall:side': 'Moving the LED wall: left/right = back/forward, up/down = bottom edge', 'ceil:side': 'Moving the ceiling: left/right = back/forward, up/down = height',
 };
 
 function setupDrag(cv, which) {
@@ -1712,7 +1721,7 @@ function setupDrag(cv, which) {
       drag.hz = lastO.cb.heading.z;
       drag.start = kind === 'wild' ? { ...state.wild[+idx] }
         : kind === 'ceil' ? { ...state.ceil }
-        : { wallZ: state.wallZ, pts: state.wallPts.map(p => ({ ...p })) };
+        : { wallZ: state.wallZ, wallBottom: state.wallBottom, pts: state.wallPts.map(p => ({ ...p })) };
     }
     cv.setPointerCapture(e.pointerId);
     e.preventDefault();

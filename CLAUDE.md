@@ -14,7 +14,7 @@ Users can:
 - set the main wall as flat/curved (width, curvature) or a **custom shape** (a chain of flat panels through points), plus height, bottom edge and pixel pitch
 - add **wild walls** (freestanding flat panels: position, angle, size) and an **LED ceiling** (rectangle: position, size, angle, height, own pitch)
 - pick a camera or sensor format, or enter a custom sensor size and resolution
-- drag the camera and the subject (a person), custom-wall corners, wild walls (move / turn) and the ceiling (move / resize) in the top view; in the side view, drag walls and the ceiling back / forward along the line of sight and up / down. Surfaces the line of sight misses are drawn dashed "off to the side". The flat/curved wall's back/forward offset is `wallZ`; a custom wall's points move instead.
+- drag the camera and the subject (a person), custom-wall corners, wild walls (move / turn) and the ceiling (move / resize) in the top view; in the side view, drag walls and the ceiling back / forward along the line of sight and up / down. Surfaces the line of sight misses are drawn dashed "off to the side" (or "behind the camera"); the view extends behind the camera to fit them. The flat/curved wall's back/forward offset is `wallZ`; a custom wall's points move instead.
 - drag the **near or far limit** (or the focus plane): focus and aperture are solved to match (`Optics.focusForLimits`, aperture rounded to a third stop)
 - set focal length, aperture, focus distance and circle of confusion
 

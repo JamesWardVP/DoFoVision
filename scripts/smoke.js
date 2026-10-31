@@ -197,7 +197,7 @@ async function launch() {
     rebuildLists(); update();
   });
   const sideDrag = async (id, dx, dy) => {
-    const at = await page.evaluate(id => { const r = sideCanvas.getBoundingClientRect(); const h = handles.side.find(h => h.id === id); return h && [r.x + h.x, r.y + h.y]; }, id);
+    const at = await page.evaluate(id => { sideCanvas.scrollIntoView({ block: 'center' }); const r = sideCanvas.getBoundingClientRect(); const h = handles.side.find(h => h.id === id); return h && [r.x + h.x, r.y + h.y]; }, id);
     if (!at) return false;
     await page.mouse.move(at[0], at[1]); await page.mouse.down();
     await page.mouse.move(at[0] + dx, at[1] + dy, { steps: 6 }); await page.mouse.up();
@@ -211,6 +211,25 @@ async function launch() {
   check(after2.wild.b > before2.wild.b, `dragging a wild wall up raises it (bottom ${before2.wild.b} → ${after2.wild.b} m)`);
   check(after2.ceil.h > before2.ceil.h && after2.ceil.z < before2.ceil.z, `ceiling moves up and further away (h ${before2.ceil.h} → ${after2.ceil.h}, z ${before2.ceil.z} → ${after2.ceil.z})`);
   check(after2.wallZ > before2.wallZ, `dragging the wall left brings it closer (wallZ ${before2.wallZ} → ${after2.wallZ})`);
+  await sideDrag('wall:side', 0, -40);
+  const bottom = await page.evaluate(() => state.wallBottom);
+  check(bottom > 0, `dragging the wall up raises its bottom edge (0 → ${bottom} m)`);
+
+  // A wild wall behind the camera still shows in the side view, behind (left of) the camera.
+  const behind = await page.evaluate(() => {
+    Object.assign(state, structuredClone(DEFAULTS), {
+      mode: 'advanced', camX: 0, camZ: 6, camY: 1.6, subX: 0, subZ: 3, aimH: 1.6,
+      wildOn: true, wild: [{ x: 0, z: 9, rot: 0, w: 4, h: 3, b: 0 }],
+      ceilOn: true, ceil: { x: 0, z: 6, w: 4, d: 6, h: 4, rot: 0 },
+    });
+    rebuildLists(); update();
+    const cam = handles.side.find(h => h.id === 'camera'), wild = handles.side.find(h => h.id === 'wild:0:side');
+    const ceil = handles.side.find(h => h.id === 'ceil:side');
+    return { cam: cam.x, wild: wild && wild.x, ceilSpan: [lastO.sections.ceil.t0, lastO.sections.ceil.t1] };
+  });
+  check(behind.wild !== undefined && behind.wild < behind.cam, `wild wall behind the camera is drawn behind it (x ${behind.wild?.toFixed(0)} < camera ${behind.cam.toFixed(0)})`);
+  check(behind.ceilSpan[0] < 0 && behind.ceilSpan[1] > 0, `a ceiling over the camera is shown both sides of it (${behind.ceilSpan.map(v => v.toFixed(1))} m)`);
+  check(await sideDrag('wild:0:side', -30, 0), 'the wild wall behind the camera can be dragged');
 
   await browser.close();
   console.log(failures ? `\n${failures} check(s) failed` : `\nAll checks passed. Screenshots in screenshots/`);
