@@ -4,7 +4,7 @@ Guidance for Claude Code (and humans) working on this repository.
 
 ## What this is
 
-**LED Wall Focus Planner**: a single-page, dependency-free web tool for virtual production. It shows a camera's field of view and depth of field against an LED volume wall, in a top view and a side view. It warns, with hazard stripes, when any visible part of the wall falls inside the depth of field, and estimates moiré from the LED pixel pitch.
+**DoFoVision** (an LED wall focus planner, formerly FOVDOFCalc): a single-page, dependency-free web tool for virtual production. It shows a camera's field of view and depth of field against an LED volume wall, in a top view and a side view. It warns, with hazard stripes, when any visible part of the wall falls inside the depth of field, and estimates moiré from the LED pixel pitch.
 
 Users can:
 - set wall width, height, bottom edge, curvature and pixel pitch

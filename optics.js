@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Pure optics / geometry maths for the LED Wall Focus Planner.
+ * Pure optics / geometry maths for DoFoVision (LED wall focus planner).
  * No DOM access, so it can be unit-tested in Node (see tests/).
  *
  * Units: distances in metres unless a name says otherwise (…Mm = millimetres).

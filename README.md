@@ -1,4 +1,6 @@
-# LED Wall Focus Planner
+# DoFoVision
+
+An LED wall focus planner, part of [Virtual Film Tools](https://ghostwhite-wren-905300.hostingersite.com/dofovision/).
 
 A simple, dependency-free web tool that shows how **field of view** and **depth of field** interact with an **LED volume wall**, and warns you when the wall itself falls into focus. When the wall is in focus, its pixel grid and seams show up and moiré becomes likely.
 
@@ -29,8 +31,8 @@ Open `index.html` in a browser. There is no build step and no dependencies. It a
 Requires Node 18 or newer. Nothing else is needed to run the page or the unit tests.
 
 ```bash
-git clone https://github.com/JamesWardVP/FOVDOFCalc.git
-cd FOVDOFCalc
+git clone https://github.com/JamesWardVP/DoFoVision.git
+cd DoFoVision
 git checkout claude/led-wall-dof-tool-jk45lr   # if this branch is not the default yet
 npm start                                       # http://localhost:8000
 npm test                                        # maths unit tests (optics.js)

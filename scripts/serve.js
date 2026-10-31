@@ -22,4 +22,4 @@ http.createServer((req, res) => {
     if (err) { res.writeHead(404).end('Not found'); return; }
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' }).end(data);
   });
-}).listen(port, () => console.log(`LED Wall Focus Planner → http://localhost:${port}`));
+}).listen(port, () => console.log(`DoFoVision → http://localhost:${port}`));

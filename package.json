@@ -1,5 +1,5 @@
 {
-  "name": "led-wall-focus-planner",
+  "name": "dofovision",
   "version": "1.0.0",
   "private": true,
   "description": "Visualise camera field of view and depth of field against an LED volume wall, with wall-in-focus and moiré warnings.",
