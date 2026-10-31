@@ -1144,12 +1144,16 @@ function init() {
   setupDrag(topCanvas, 'top');
   setupDrag(sideCanvas, 'side');
   new ResizeObserver(() => update(false)).observe(document.querySelector('.views'));
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  // Redraw with the new colours when the theme changes: the system setting,
+  // or data-theme on <html> (set by the Virtual Film Tools header switch).
+  const onThemeChange = () => {
     readColors();
     hazardCache.delete(topCanvas.getContext('2d'));
     hazardCache.delete(sideCanvas.getContext('2d'));
     update(false);
-  });
+  };
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onThemeChange);
+  new MutationObserver(onThemeChange).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   update();
 }
 
