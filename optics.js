@@ -38,6 +38,22 @@ const Optics = (() => {
     return (D * H) / (H - f + D);
   }
 
+  /*
+   * Focus distance and f-number that put the near and far limits exactly at
+   * `near` and `far` (far may be Infinity). Used when the depth of field is
+   * dragged. With h = H − f the limits are near = s·h / (h + s − f) and
+   * far = s·h / (h − s + f), so
+   *   1/near + 1/far = 2/s            →  s = 2·near·far / (near + far)
+   *   1/near − 1/far = 2(s − f)/(s·h)  →  h = 2(s − f) / (s·(1/near − 1/far))
+   * and N = f² / (c·h).
+   */
+  function focusForLimits(f, c, near, far) {
+    const inv = 1 / near + (isFinite(far) ? 1 / far : 0);
+    const s = 2 / inv;
+    const h = (2 * (s - f)) / (s * (1 / near - (isFinite(far) ? 1 / far : 0)));
+    return { s, N: (f * f) / (c * h) };
+  }
+
   /* ---------------- Defocus MTF (for moiré) ---------------- */
 
   // Bessel function of the first kind, order 1 (Numerical Recipes rational approximation).
@@ -175,10 +191,141 @@ const Optics = (() => {
 
   const clamp01 = u => Math.min(1, Math.max(0, u));
 
+  /* ---------------- Polyline walls (custom shapes, wild walls) ---------------- */
+  /*
+   * A custom wall is a chain of flat panels through plan points [{x, z}, ...],
+   * listed left → right as seen from the stage. Each segment's LED face points
+   * to the left of its direction of travel: tangent (tx, tz), normal (−tz, tx),
+   * which matches wallPlan for flat and curved walls.
+   */
+  function polyBuild(pts) {
+    const segs = [];
+    let L = 0;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      if (len < 1e-9) continue;
+      const tx = (b.x - a.x) / len, tz = (b.z - a.z) / len;
+      segs.push({ x0: a.x, z0: a.z, x1: b.x, z1: b.z, len, tx, tz, nx: -tz, nz: tx, s0: L });
+      L += len;
+    }
+    return { pts, segs, L };
+  }
+
+  // Point at u ∈ [0, 1] along the chain's length, with normal and tangent.
+  function polyAt(poly, u) {
+    const segs = poly.segs;
+    if (!segs.length) return { x: 0, z: 0, nx: 0, nz: 1, tx: 1, tz: 0 };
+    const s = clamp01(u) * poly.L;
+    let seg = segs[segs.length - 1];
+    for (const g of segs) if (s <= g.s0 + g.len) { seg = g; break; }
+    const k = (s - seg.s0) / seg.len;
+    return { x: seg.x0 + k * (seg.x1 - seg.x0), z: seg.z0 + k * (seg.z1 - seg.z0), nx: seg.nx, nz: seg.nz, tx: seg.tx, tz: seg.tz };
+  }
+
+  // Nearest front-facing hit of a horizontal ray on the chain: {t, x, z, u, onWall} or null.
+  function rayPoly(poly, ox, oz, dx, dz) {
+    let best = null;
+    for (const g of poly.segs) {
+      const ex = g.x1 - g.x0, ez = g.z1 - g.z0;
+      const den = dx * ez - dz * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const wx = g.x0 - ox, wz = g.z0 - oz;
+      const t = (wx * ez - wz * ex) / den;
+      const k = (wx * dz - wz * dx) / den;
+      if (t <= 1e-9 || k < -1e-9 || k > 1 + 1e-9) continue;
+      if (g.nx * -dx + g.nz * -dz <= 0) continue; // seeing the back of the panel
+      if (!best || t < best.t) best = { t, x: ox + t * dx, z: oz + t * dz, u: (g.s0 + clamp01(k) * g.len) / poly.L, onWall: true };
+    }
+    return best;
+  }
+
+  // Signed clearance of a plan point in front of the chain (positive = LED side).
+  // Points whose nearest spot is an end of the chain are treated as clear.
+  function polyClearance(poly, x, z) {
+    let best = null;
+    for (const g of poly.segs) {
+      const k = ((x - g.x0) * g.tx + (z - g.z0) * g.tz) / g.len;
+      const kc = clamp01(k);
+      const px = g.x0 + kc * (g.x1 - g.x0), pz = g.z0 + kc * (g.z1 - g.z0);
+      const d = Math.hypot(x - px, z - pz);
+      if (!best || d < best.d) best = { d, g, inside: k >= 0 && k <= 1, side: (x - px) * g.nx + (z - pz) * g.nz };
+    }
+    if (!best || !best.inside) return Infinity;
+    return best.side;
+  }
+
+  // Move a plan point so it is at least `margin` in front of the chain.
+  function polyKeepInFront(poly, x, z, margin) {
+    const c = polyClearance(poly, x, z);
+    if (c >= margin) return { x, z };
+    let best = null;
+    for (const g of poly.segs) {
+      const k = clamp01(((x - g.x0) * g.tx + (z - g.z0) * g.tz) / g.len);
+      const px = g.x0 + k * (g.x1 - g.x0), pz = g.z0 + k * (g.z1 - g.z0);
+      const d = Math.hypot(x - px, z - pz);
+      if (!best || d < best.d) best = { d, px, pz, g };
+    }
+    return { x: best.px + best.g.nx * margin, z: best.pz + best.g.nz * margin };
+  }
+
+  // Plan points sampling a flat or curved wall, for turning it into a custom shape.
+  function arcPoints(W, curveDeg, n) {
+    const shape = wallShape(W, curveDeg);
+    const count = shape.flat ? 2 : Math.max(2, n);
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const p = wallPlan(shape, i / (count - 1));
+      out.push({ x: +p.x.toFixed(3), z: +p.z.toFixed(3) });
+    }
+    return out;
+  }
+
+  // A flat panel of width w centred on (x, z), turned `rotDeg` from facing +z.
+  function panelPoints(x, z, rotDeg, w) {
+    const a = (rotDeg * Math.PI) / 180;
+    const tx = Math.cos(a), tz = -Math.sin(a);
+    return [{ x: x - (tx * w) / 2, z: z - (tz * w) / 2 }, { x: x + (tx * w) / 2, z: z + (tz * w) / 2 }];
+  }
+
+  // Corners of a rectangle (w along its own x, d along its own z) centred on (x, z),
+  // turned rotDeg, in order around the edge.
+  function rectCorners(x, z, w, d, rotDeg) {
+    const a = (rotDeg * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => {
+      const lx = (i * w) / 2, lz = (j * d) / 2;
+      return { x: x + lx * ca + lz * sa, z: z - lx * sa + lz * ca };
+    });
+  }
+
+  // Range of t where the ray (ox,oz)+t(dx,dz), t > 0, runs inside a convex polygon.
+  function rayConvexInterval(corners, ox, oz, dx, dz) {
+    let t0 = 0, t1 = Infinity;
+    const n = corners.length;
+    // Orientation so that "inside" is on a consistent side of every edge.
+    let area = 0;
+    for (let i = 0; i < n; i++) { const a = corners[i], b = corners[(i + 1) % n]; area += a.x * b.z - b.x * a.z; }
+    const sgn = area > 0 ? 1 : -1;
+    for (let i = 0; i < n; i++) {
+      const a = corners[i], b = corners[(i + 1) % n];
+      // Inward normal of edge a→b
+      const nx = -(b.z - a.z) * sgn, nz = (b.x - a.x) * sgn;
+      const num = (ox - a.x) * nx + (oz - a.z) * nz; // ≥ 0 inside
+      const den = dx * nx + dz * nz;
+      if (Math.abs(den) < 1e-12) { if (num < 0) return null; continue; }
+      const t = -num / den;
+      if (den > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+      if (t0 > t1) return null;
+    }
+    return isFinite(t1) && t1 > t0 ? [t0, t1] : null;
+  }
+
   return {
-    dof, blurDiameter, imageDistance, stopForFarLimit, maxFocusForFarLimit,
+    dof, blurDiameter, imageDistance, stopForFarLimit, maxFocusForFarLimit, focusForLimits,
     besselJ1, defocusContrast, moireLevel, SAFE_BLUR_RATIO, BAYER_LIMIT,
     wallShape, wallPlan, wallU, rayWall, frontClearance, keepInFront,
+    polyBuild, polyAt, rayPoly, polyClearance, polyKeepInFront, arcPoints, panelPoints,
+    rectCorners, rayConvexInterval,
   };
 })();
 

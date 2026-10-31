@@ -136,3 +136,86 @@ test('keepInFront moves points onto the stage side', () => {
     }
   }
 });
+
+test('focusForLimits reproduces the near and far limits it was asked for', () => {
+  // Hand check: near 2 m, far 4 m → s = 2·2·4/(2+4) = 2.6667 m (harmonic mean).
+  const c = 0.000025;
+  let r = O.focusForLimits(0.035, c, 2, 4);
+  close(r.s, 8 / 3, 1e-12, 's = 2·n·F/(n+F)');
+  let d = O.dof(0.035, r.N, c, r.s);
+  close(d.near, 2, 1e-9, 'near'); close(d.far, 4, 1e-9, 'far');
+  // Round trip from a known setting: 50 mm f/2.8 at 3 m.
+  const ref = O.dof(0.05, 2.8, 0.00003, 3);
+  r = O.focusForLimits(0.05, 0.00003, ref.near, ref.far);
+  close(r.s, 3, 1e-9, 'focus back'); close(r.N, 2.8, 1e-9, 'stop back');
+  // Far at infinity means focus at the hyperfocal distance: s = 2·near, near = H/2.
+  r = O.focusForLimits(0.035, c, 3, Infinity);
+  close(r.s, 6, 1e-12, 's = 2·near');
+  d = O.dof(0.035, r.N, c, r.s);
+  close(d.near, 3, 1e-9); assert.equal(d.far, Infinity);
+});
+
+test('polyline walls: length, points, normals', () => {
+  // An L: 4 m along +x, then 3 m toward the stage (+z). Total 7 m.
+  const p = O.polyBuild([{ x: -2, z: 0 }, { x: 2, z: 0 }, { x: 2, z: 3 }]);
+  close(p.L, 7, 1e-12);
+  let a = O.polyAt(p, 2 / 7); // 2 m in: middle of the first panel
+  close(a.x, 0, 1e-12); close(a.z, 0, 1e-12); close(a.nx, 0, 1e-12); close(a.nz, 1, 1e-12);
+  a = O.polyAt(p, 5.5 / 7);   // 1.5 m up the second panel, facing −x (into the stage)
+  close(a.x, 2, 1e-12); close(a.z, 1.5, 1e-12); close(a.nx, -1, 1e-12); close(a.nz, 0, 1e-12);
+  // A two-point chain equals the flat wall of the same width.
+  const flat = O.polyBuild(O.arcPoints(10, 0, 9));
+  for (const u of [0, 0.3, 0.5, 1]) {
+    const q = O.polyAt(flat, u), w = O.wallPlan(O.wallShape(10, 0), u);
+    close(q.x, w.x, 1e-9); close(q.z, w.z, 1e-9); close(q.nz, w.nz, 1e-12);
+  }
+});
+
+test('arcPoints lie on the curved wall and keep its ends', () => {
+  const shape = O.wallShape(12, 90);
+  const pts = O.arcPoints(12, 90, 7);
+  assert.equal(pts.length, 7);
+  for (const q of pts) close(O.frontClearance(shape, q.x, q.z), 0, 2e-3, 'on the arc');
+  const end = O.wallPlan(shape, 1);
+  close(pts[6].x, end.x, 2e-3); close(pts[6].z, end.z, 2e-3);
+});
+
+test('rayPoly hits the nearest front face and ignores backs', () => {
+  const p = O.polyBuild([{ x: -2, z: 0 }, { x: 2, z: 0 }, { x: 2, z: 3 }]);
+  let h = O.rayPoly(p, 0, 5, 0, -1);           // straight at the first panel
+  close(h.t, 5, 1e-12); close(h.u, 2 / 7, 1e-12);
+  h = O.rayPoly(p, 0, 1.5, 1, 0);              // sideways into the return panel's face
+  close(h.t, 2, 1e-12); close(h.z, 1.5, 1e-12);
+  assert.equal(O.rayPoly(p, 5, 1.5, -1, 0), null); // from behind the return panel
+  assert.equal(O.rayPoly(p, 0, 5, 0, 1), null);    // facing away
+});
+
+test('polyKeepInFront moves points to the LED side of a custom wall', () => {
+  const p = O.polyBuild([{ x: -3, z: 0 }, { x: 0, z: 1 }, { x: 3, z: 0 }]);
+  for (const [x, z] of [[0, 0], [-1.5, -1], [2, 0.1], [0, 0.9]]) {
+    const q = O.polyKeepInFront(p, x, z, 0.3);
+    assert.ok(O.polyClearance(p, q.x, q.z) >= 0.3 - 1e-9, `(${x}, ${z}) → (${q.x}, ${q.z})`);
+  }
+  // A point already well in front is untouched.
+  assert.deepEqual(O.polyKeepInFront(p, 0, 4, 0.3), { x: 0, z: 4 });
+});
+
+test('panels, rectangles and the ray-through-rectangle interval', () => {
+  // A 4 m panel at (1, 2) facing +z spans x −1..3; turned 90° it faces +x.
+  let pts = O.panelPoints(1, 2, 0, 4);
+  close(pts[0].x, -1, 1e-12); close(pts[1].x, 3, 1e-12); close(pts[0].z, 2, 1e-12);
+  assert.ok(O.polyAt(O.polyBuild(pts), 0.5).nz > 0.999);
+  pts = O.panelPoints(0, 0, 90, 2);
+  close(O.polyAt(O.polyBuild(pts), 0.5).nx, 1, 1e-12);
+  // 4 × 2 rectangle centred on (0, 5): a ray up the z axis from the origin crosses z 4..6.
+  const rc = O.rectCorners(0, 5, 4, 2, 0);
+  let iv = O.rayConvexInterval(rc, 0, 0, 0, 1);
+  close(iv[0], 4, 1e-12); close(iv[1], 6, 1e-12);
+  // Starting inside: the interval starts at 0. Missing it: null.
+  iv = O.rayConvexInterval(rc, 0, 5, 1, 0);
+  close(iv[0], 0, 1e-12); close(iv[1], 2, 1e-12);
+  assert.equal(O.rayConvexInterval(rc, 5, 0, 0, 1), null);
+  // Turned 90°: now 2 wide in x, 4 deep in z.
+  iv = O.rayConvexInterval(O.rectCorners(0, 5, 4, 2, 90), 0, 0, 0, 1);
+  close(iv[0], 3, 1e-12); close(iv[1], 7, 1e-12);
+});
