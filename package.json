@@ -1,0 +1,18 @@
+{
+  "name": "led-wall-focus-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Visualise camera field of view and depth of field against an LED volume wall, with wall-in-focus and moiré warnings.",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test",
+    "smoke": "node scripts/smoke.js",
+    "check": "node --test && node scripts/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

@@ -24,10 +24,24 @@ Open `index.html` in a browser. There is no build step and no dependencies. It a
 - Moiré: the LED pitch is projected onto the sensor along both grid axes, including foreshortening on angled or curved panels. The remaining grid contrast is the MTF of a uniform defocus disc, `|2·J1(x)/x|` with `x = π·b / imaged pitch`. Risk is high when a pattern finer than 4 photosites per LED pixel (the Bayer colour sampling limit) keeps at least 30% contrast, and moderate at 10–30%. The disc MTF has side lobes, so a slightly *more* blurred area can show weak, contrast-reversed grid again. Lens sharpness and optical low-pass filters are not modelled, so the estimate is conservative.
 - The wall face is sampled on a grid. For each sample point, the tool checks whether it is inside the camera frustum. It then compares the point's depth along the lens axis with the near and far limits. The focus plane is perpendicular to the lens axis, so a panned camera sees one side of the wall closer than the other.
 
-## Tests
+## Local development
 
-The maths lives in `optics.js` and is unit-tested against reference values:
+Requires Node 18 or newer. Nothing else is needed to run the page or the unit tests.
 
+```bash
+git clone https://github.com/JamesWardVP/FOVDOFCalc.git
+cd FOVDOFCalc
+git checkout claude/led-wall-dof-tool-jk45lr   # if this branch is not the default yet
+npm start                                       # http://localhost:8000
+npm test                                        # maths unit tests (optics.js)
 ```
-node --test
+
+Optional browser smoke test (page errors, phone layout, geometry cross-checks, controls). It also saves screenshots to `screenshots/`:
+
+```bash
+npm install
+npx playwright install chromium
+npm run smoke        # or: npm run check  (unit tests + smoke test)
 ```
+
+See `CLAUDE.md` for the code layout and conventions.
