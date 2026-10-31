@@ -1,12 +1,17 @@
 # DoFoVision
 
-An LED wall focus planner, part of [Virtual Film Tools](https://ghostwhite-wren-905300.hostingersite.com/dofovision/).
+An LED wall focus planner, part of [Virtual Film Tools](https://virtualfilmtools.com/dofovision/).
 
 A simple, dependency-free web tool that shows how **field of view** and **depth of field** interact with an **LED volume wall**, and warns you when the wall itself falls into focus. When the wall is in focus, its pixel grid and seams show up and moiré becomes likely.
 
 ## Using it
 
 Open `index.html` in a browser. There is no build step and no dependencies. It also works as-is on GitHub Pages: set **Settings → Pages → Deploy from branch** to the repo root.
+
+- **Simple / Advanced:** Simple (the default) is built for a phone on set: the status, the top view with big drag handles, near / focus / far / depth of field in large type, a plain-language verdict with the first fix, and one-tap lens and aperture buttons. Advanced shows every setting and readout below.
+- **Drag the depth of field:** drag the green near or far point (or the orange focus line). DoFoVision works out the focus distance and aperture that give that depth of field and sets them, with the aperture rounded to the nearest third of a stop.
+- **Custom LED walls:** switch the wall to **Custom shape** and place its corners (drag them, add points at either end, or type exact positions). Each run between points is flat, like a chain of cabinets.
+- **Wild walls and ceiling:** add freestanding wild walls (move, turn, size) and an LED ceiling (move, resize, set its height and own pixel pitch). Every LED surface gets the same in-focus and moiré checks.
 
 - **Top view** shows the camera, the subject (a person), the horizontal FOV, the DOF band, the focus plane and the near, far and hyperfocal points. Drag the camera or the subject to move them.
 - **Side view** is a vertical slice along the camera's line of sight. Drag the camera to change the lens height, or drag the aim point to change where on the subject the camera points.

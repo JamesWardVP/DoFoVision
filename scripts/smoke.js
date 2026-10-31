@@ -25,11 +25,15 @@ const check = (ok, msg) => {
 const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
 
 const SCENES = [
-  ['default', '', 1400, 'dark'],
-  ['wall-in-focus', '#fstopIdx=22&subZ=1.5&camZ=4&pitch=1.2', 1400, 'light'],
-  ['concave', '#curve=150&wallW=14&camZ=5&camX=1&subX=-0.5&subZ=2.5&focal=24&stageDepth=8', 1400, 'dark'],
-  ['convex', '#curve=-70&camX=-3&camZ=5&subX=1&subZ=2.5&fstopIdx=15', 1400, 'dark'],
-  ['phone', '#curve=120&fstopIdx=20&subZ=1.5&camZ=4', 390, 'dark'],
+  ['simple', '', 1400, 'dark'],
+  ['simple-phone', '#mode=simple&fstopIdx=22&subZ=1.5&camZ=4', 390, 'light'],
+  ['default', '#mode=advanced', 1400, 'dark'],
+  ['wall-in-focus', '#mode=advanced&fstopIdx=22&subZ=1.5&camZ=4&pitch=1.2', 1400, 'light'],
+  ['concave', '#mode=advanced&curve=150&wallW=14&camZ=5&camX=1&subX=-0.5&subZ=2.5&focal=24&stageDepth=8', 1400, 'dark'],
+  ['convex', '#mode=advanced&curve=-70&camX=-3&camZ=5&subX=1&subZ=2.5&fstopIdx=15', 1400, 'dark'],
+  ['phone', '#mode=advanced&curve=120&fstopIdx=20&subZ=1.5&camZ=4', 390, 'dark'],
+  ['custom-wall', '#mode=advanced&wallMode=custom&wallPts=-6,3;-4,0;4,0;6,3&camZ=6&focal=18', 1400, 'dark'],
+  ['wild-and-ceiling', '#mode=advanced&wildOn=1&wild=-4.5,3,90,4,3,0;4.5,3,-90,4,3,0&ceilOn=1&ceil=0,3,10,6,3.2,0&camY=1&aimH=2.2&fstopIdx=20', 1400, 'dark'],
 ];
 
 // Uses Playwright's own Chromium; if that build isn't installed, set CHROMIUM_PATH to any
@@ -67,10 +71,10 @@ async function launch() {
 
   console.log('Geometry cross-checks');
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
-  await page.goto(pageUrl());
+  await page.goto(pageUrl('#mode=advanced'));
   const r = await page.evaluate(() => {
     const out = {};
-    const run = patch => { Object.assign(state, DEFAULTS, patch); normalise(); return compute(); };
+    const run = patch => { Object.assign(state, structuredClone(DEFAULTS), { mode: 'advanced' }, patch); normalise(); return compute(); };
 
     // Level camera 5 m straight in front of a flat wall: nearest wall depth is exactly 5 m.
     let o = run({ camX: 0, camZ: 5, camY: 2, subX: 0, subZ: 3, aimH: 2 });
@@ -96,7 +100,26 @@ async function launch() {
       if (e.inFocus !== (Optics.blurDiameter(o.f, o.N, o.s, e.depth) <= o.c * (1 + 1e-9))) bad++;
     }
     out.checked = checked; out.bad = bad;
-    state = { ...DEFAULTS }; update();
+
+    // A two-point custom wall is the same flat wall: straight-on depth is still 5 m.
+    o = run({ wallMode: 'custom', wallPts: [{ x: -5, z: 0 }, { x: 5, z: 0 }], camX: 0, camZ: 5, camY: 2, subX: 0, subZ: 3, aimH: 2 });
+    out.customMin = o.wall.minDepth;
+    // A wild wall 2 m in front of the camera, facing it, square-on: nearest LED at 2 m.
+    o = run({ camX: 0, camZ: 8, camY: 2, subX: 0, subZ: 3, aimH: 2, wildOn: true, wild: [{ x: 0, z: 10, rot: 180, w: 4, h: 4, b: 0 }] });
+    state.camZ = 8; state.subZ = 12; o = compute();
+    out.wildMin = o.results[1].minDepth; out.wildName = o.results[1].S.name;
+    // Ceiling 1 m above a camera that looks 45° up: the axis meets it at √2 m.
+    o = run({ camX: 0, camZ: 6, camY: 2, subX: 0, subZ: 4, aimH: 4, ceilOn: true, ceil: { x: 0, z: 4, w: 6, d: 6, h: 3, rot: 0 } });
+    const ceil = o.results.find(x => x.S.kind === 'h');
+    out.ceilVisible = ceil.visible > 0; out.ceilMin = ceil.minDepth;
+
+    // Dragging the far limit to 6 m (near fixed) lands it there, to within a third of a stop.
+    o = run({ focusAuto: false, focus: 3, fstopIdx: FSTOPS.indexOf(2.8) });
+    lastO = o; const near0 = o.near;
+    dragDepth('far', 6); o = compute();
+    out.dragNear = [near0, o.near]; out.dragFar = o.far; out.dragStop = FSTOPS[state.fstopIdx];
+
+    state = structuredClone(DEFAULTS); state.mode = 'advanced'; update();
     return out;
   });
   check(near(r.straightMin, 5), `nearest wall depth straight-on = 5 m (got ${r.straightMin})`);
@@ -105,6 +128,11 @@ async function launch() {
   check(near(r.hfov, r.hfovExpected, 1e-12), 'horizontal FOV = 2·atan(w / 2f)');
   check(near(r.concaveMax, r.R, 1e-6), `concave wall from its centre: max depth = R (${r.R.toFixed(3)} m)`);
   check(r.checked > 0 && r.bad === 0, `in-focus flag matches blur ≤ CoC at ${r.checked} points`);
+  check(near(r.customMin, 5, 1e-9), `two-point custom wall straight-on = 5 m (got ${r.customMin})`);
+  check(near(r.wildMin, 2, 1e-6) && r.wildName === 'Wild wall 1', `wild wall facing the camera at 2 m (got ${r.wildMin})`);
+  check(r.ceilVisible && r.ceilMin > 0 && r.ceilMin < 2, `LED ceiling is analysed (nearest ${r.ceilMin.toFixed(3)} m)`);
+  check(Math.abs(r.dragFar - 6) / 6 < 0.12 && Math.abs(r.dragNear[1] - r.dragNear[0]) / r.dragNear[0] < 0.05,
+    `dragging the far limit to 6 m → far ${r.dragFar.toFixed(2)} m, near ${r.dragNear[0].toFixed(2)} → ${r.dragNear[1].toFixed(2)} m at f/${r.dragStop}`);
 
   console.log('Controls');
   await page.fill('#sensorW', '30');

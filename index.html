@@ -4,30 +4,109 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DoFoVision · LED Wall Focus Planner</title>
-  <meta name="description" content="Visualise camera field of view and depth of field against an LED volume wall, and see when the wall falls into focus.">
+  <meta name="description" content="Visualise camera field of view and depth of field against an LED volume — walls, wild walls and ceilings — and see when the LED falls into focus.">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-mode="simple">
   <header class="topbar">
     <div class="brand">
       <h1>DoFoVision</h1>
       <p>LED wall focus planner: field of view &amp; depth of field against an LED volume</p>
     </div>
+    <!-- On Virtual Film Tools this toggle moves into the site header (data-vft-slot). -->
+    <div class="mode-toggle" data-vft-slot role="group" aria-label="View">
+      <button type="button" data-mode="simple" aria-pressed="true">Simple</button>
+      <button type="button" data-mode="advanced" aria-pressed="false">Advanced</button>
+    </div>
     <div id="status" class="status" role="status" aria-live="polite"></div>
   </header>
 
   <main class="layout">
+    <!-- Simple mode: what you need on set, sized for a phone -->
+    <aside class="simple" id="simple">
+      <div id="glance" class="glance" aria-live="polite"></div>
+
+      <section class="s-card">
+        <div class="s-head"><h2>Lens</h2><span class="s-val" id="s-focal-val"></span></div>
+        <div class="chips" id="s-focal" role="group" aria-label="Focal length (mm)"></div>
+      </section>
+
+      <section class="s-card">
+        <div class="s-head"><h2>Aperture</h2></div>
+        <div class="stepper">
+          <button type="button" id="s-stop-down" aria-label="Open up a third of a stop">−</button>
+          <output id="s-stop-val"></output>
+          <button type="button" id="s-stop-up" aria-label="Stop down a third of a stop">+</button>
+        </div>
+        <div class="chips" id="s-stops" role="group" aria-label="Full stops"></div>
+      </section>
+
+      <section class="s-card">
+        <div id="s-focus"></div>
+        <label class="switch"><input id="s-follow" type="checkbox"><span>Focus follows the talent</span></label>
+      </section>
+
+      <section class="s-card">
+        <div class="s-head"><h2>Placement</h2></div>
+        <div id="s-place"></div>
+        <p class="hint">Or drag the camera and the talent in the view.</p>
+      </section>
+
+      <section class="s-card">
+        <label class="field">
+          <span>Camera</span>
+          <select id="s-body"></select>
+        </label>
+      </section>
+    </aside>
+
+    <!-- Advanced mode: every setting -->
     <aside class="controls">
       <section class="panel">
         <h2>LED wall</h2>
+        <div class="seg" role="group" aria-label="Wall shape">
+          <button type="button" data-wallmode="simple">Flat / curved</button>
+          <button type="button" data-wallmode="custom">Custom shape</button>
+        </div>
+        <div class="wall-simple">
+          <div id="ctl-wall-simple"></div>
+          <p class="hint" id="curve-info"></p>
+        </div>
+        <div class="wall-custom">
+          <p class="hint">Each point is a corner between flat runs of panels, left to right as seen from the stage. Drag the square points in the top view, or type exact positions.</p>
+          <div id="wall-pts" class="pts"></div>
+          <div class="btnrow">
+            <button type="button" id="pt-add-left">+ Point at left end</button>
+            <button type="button" id="pt-add-right">+ Point at right end</button>
+          </div>
+        </div>
         <div id="ctl-wall"></div>
-        <p class="hint" id="curve-info"></p>
         <div class="subgroup">
           <label class="field">
             <span>LED pixel pitch</span>
             <select id="pitchSel"></select>
           </label>
           <label class="field inline"><span>Pitch (custom entry)</span><span class="val"><input id="pitch" type="number" min="0.3" max="20" step="0.01"> mm</span></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Wild walls</h2>
+        <label class="switch"><input id="wildOn" type="checkbox"><span>Show wild walls</span></label>
+        <div class="wild-body">
+          <p class="hint">Freestanding LED panels, e.g. for reflections. Drag the square to move one and the round handle to turn it. They use the wall's pixel pitch.</p>
+          <div id="wild-list"></div>
+          <button type="button" id="wild-add">+ Add wild wall</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>LED ceiling</h2>
+        <label class="switch"><input id="ceilOn" type="checkbox"><span>Show LED ceiling</span></label>
+        <div class="ceil-body">
+          <p class="hint">Drag the square to move it and the round corner to resize it in the top view; drag it up or down in the side view.</p>
+          <div id="ctl-ceil"></div>
+          <label class="field inline"><span>Ceiling pixel pitch</span><span class="val"><input id="ceilPitch" type="number" min="0.3" max="20" step="0.1"> mm</span></label>
         </div>
       </section>
 
@@ -65,22 +144,23 @@
         <div id="ctl-view"></div>
         <button id="reset" type="button">Reset to defaults</button>
       </section>
-
     </aside>
 
     <section class="views">
       <div class="view">
         <div class="view-head">
           <h2>Top view</h2>
-          <span class="hint">Drag the camera or the subject</span>
+          <span class="hint adv-only">Drag the camera, the subject, or the near / far / focus points</span>
+          <span class="hint simple-only">Drag the camera or the talent · drag the green near / far points to change the depth of field</span>
+          <span class="drag-hint" id="drag-hint" aria-live="polite"></span>
         </div>
-        <canvas id="top" aria-label="Top-down view of the LED wall, camera, subject, field of view and depth of field"></canvas>
+        <canvas id="top" aria-label="Top-down view of the LED volume, camera, subject, field of view and depth of field"></canvas>
       </div>
 
-      <div class="view">
+      <div class="view adv-only">
         <div class="view-head">
           <h2>Side view</h2>
-          <span class="hint">Section along the line of sight · drag the camera (height) or the aim point</span>
+          <span class="hint">Section along the line of sight · drag the camera (height), the aim point, or the near / far / focus points</span>
         </div>
         <canvas id="side" aria-label="Side view along the camera's line of sight"></canvas>
       </div>
@@ -91,23 +171,25 @@
         <span><i class="sw line focus"></i>Focus plane</span>
         <span><i class="dot near"></i>Nearest sharp</span>
         <span><i class="dot far"></i>Furthest sharp</span>
-        <span><i class="dot hyper"></i>Hyperfocal</span>
-        <span><i class="sw lit"></i>Wall in frame</span>
-        <span><i class="sw hazard"></i>Wall in focus</span>
+        <span class="adv-only"><i class="dot hyper"></i>Hyperfocal</span>
+        <span><i class="sw lit"></i>LED in frame</span>
+        <span><i class="sw hazard"></i>LED in focus</span>
         <span><i class="sw moire-mid"></i>Moiré moderate</span>
-        <span><i class="sw moire-high"></i>Moiré high</span>
+        <span class="adv-only"><i class="sw moire-high"></i>Moiré high</span>
       </div>
 
-      <div id="readouts" class="readouts"></div>
-      <div id="advice" class="advice"></div>
+      <div id="readouts" class="readouts adv-only"></div>
+      <div id="advice" class="advice adv-only"></div>
 
-      <p class="footnote">
-        Depth of field uses the thin-lens hyperfocal model. Distances to the wall are measured along the optical axis
+      <p class="footnote adv-only">
+        Depth of field uses the thin-lens hyperfocal model. Distances to the LED are measured along the optical axis
         (the focus plane is perpendicular to the lens axis), so a panned camera sees one side of the wall closer than the other.
         The top view shows the horizontal slice through the lens axis; the side view shows the vertical slice.
         The moiré check images the LED pitch onto the sensor (including foreshortening on angled or curved panels),
         compares it with the photosite pitch, and applies the contrast loss from defocus blur. It ignores lens sharpness
-        and any optical low-pass filter, so treat it as a conservative estimate.
+        and any optical low-pass filter, so treat it as a conservative estimate. Surfaces are checked independently:
+        one LED surface hiding another is not modelled. Dragging the near or far limit picks the focus distance and
+        aperture that give it, with the aperture rounded to the nearest third of a stop.
       </p>
     </section>
   </main>
