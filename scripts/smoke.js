@@ -166,6 +166,26 @@ async function launch() {
   const after = await page.evaluate(() => [state.camX, state.camZ]);
   check(after[0] > before[0] && after[1] < before[1], `dragging the camera moves it (${before} → ${after})`);
 
+  // Switches and layout controls, clicked the way a user would.
+  await page.click('text=Show wild walls');
+  v = await page.evaluate(() => [state.wildOn, document.querySelectorAll('#wild-list .card').length]);
+  check(v[0] === true && v[1] === 1, 'wild walls switch turns them on with one wall');
+  await page.click('#wild-add');
+  check(await page.evaluate(() => state.wild.length) === 2, '"Add wild wall" adds a second one');
+  await page.click('text=Show LED ceiling');
+  v = await page.evaluate(() => [state.ceilOn, lastO.results.map(r => r.S.kind).join('')]);
+  check(v[0] === true && v[1] === 'vvvh', `ceiling switch adds the ceiling (surfaces ${v[1]})`);
+  await page.click('text=Focus on subject');
+  check(await page.evaluate(() => state.focusAuto) === false, 'follow-focus switch toggles');
+  await page.click('button[data-wallmode="custom"]');
+  await page.click('#pt-add-right');
+  v = await page.evaluate(() => [state.wallMode, state.wallPts.length, document.querySelectorAll('#wall-pts .pt-row').length]);
+  check(v[0] === 'custom' && v[1] === v[2] && v[1] >= 3, `custom wall: points added and listed (${v[1]})`);
+  await page.click('button[data-mode="simple"]');
+  await page.click('text=Focus follows the talent');
+  v = await page.evaluate(() => [state.mode, state.focusAuto]);
+  check(v[0] === 'simple' && v[1] === true, 'simple mode: follow-focus switch works');
+
   await browser.close();
   console.log(failures ? `\n${failures} check(s) failed` : `\nAll checks passed. Screenshots in screenshots/`);
   process.exit(failures ? 1 : 0);

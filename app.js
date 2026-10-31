@@ -630,7 +630,7 @@ function drawCamera(ctx, x, y, ang, active) {
   ctx.strokeStyle = colors['canvas-bg'];
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.rect(-16, -8, 20, 16);
+  ctx.roundRect(-16, -8, 20, 16, 3);
   ctx.fill(); ctx.stroke();
   poly(ctx, [[4, -4], [13, -8], [13, 8], [4, 4]]);
   ctx.fill(); ctx.stroke();
@@ -1060,7 +1060,9 @@ function drawSide(o) {
   ctx.beginPath();
   ctx.arc(sx, V.Y(sh - headR), headR * V.k, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillRect(sx - 0.13 * V.k, V.Y(sh - 2 * headR - 0.04), 0.26 * V.k, (sh - 2 * headR - 0.04) * V.k);
+  ctx.beginPath();
+  ctx.roundRect(sx - 0.13 * V.k, V.Y(sh - 2 * headR - 0.04), 0.26 * V.k, (sh - 2 * headR - 0.04) * V.k, 0.08 * V.k);
+  ctx.fill();
 
   // Aim point
   const ax = V.X(subDist), ay = V.Y(state.aimH);
@@ -1323,13 +1325,14 @@ function buildControls() {
   });
 
   // Mode toggle (Simple / Advanced)
-  document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  // Buttons only: <body> carries data-mode too, for the CSS.
+  document.querySelectorAll('button[data-mode]').forEach(b => b.addEventListener('click', () => {
     set('mode', b.dataset.mode);
     try { localStorage.setItem('dofovision-mode', state.mode); } catch (e) { /* not remembered */ }
   }));
 
   // Wall shape toggle
-  document.querySelectorAll('[data-wallmode]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('button[data-wallmode]').forEach(b => b.addEventListener('click', () => {
     const m = b.dataset.wallmode;
     if (m === 'custom' && state.wallMode !== 'custom') state.wallPts = Optics.arcPoints(state.wallW, state.curve, 7);
     state.wallMode = m;
@@ -1501,8 +1504,8 @@ function sync(o) {
   for (const r of rows) if (r.spec.key === 'focus') r.row.classList.toggle('following', state.focusAuto);
 
   document.body.dataset.mode = state.mode;
-  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
-  document.querySelectorAll('[data-wallmode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.wallmode === state.wallMode)));
+  document.querySelectorAll('button[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+  document.querySelectorAll('button[data-wallmode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.wallmode === state.wallMode)));
   document.body.dataset.wallmode = state.wallMode;
 
   for (const id of ['body', 's-body']) document.getElementById(id).value = state.body;
