@@ -693,6 +693,9 @@ function frontClip(ctx, V, mw, w, h) {
   ctx.clip();
 }
 
+// Moiré band: width and gap from the LED face, in screen pixels.
+const MOIRE_W = 8, MOIRE_GAP = 4;
+
 // A vertical LED surface in plan: one slab per analysed column, behind the face.
 function drawWallPlan(ctx, V, res, thick) {
   const S = res.S;
@@ -712,11 +715,24 @@ function drawWallPlan(ctx, V, res, thick) {
     ctx.lineWidth = 0.6;
     ctx.fill();
     ctx.stroke();
-    if (col.moire >= 2) { // moiré strip on the stage side of the face
-      poly(ctx, quad(col.u - du, col.u + du, -1.5 / V.k, -5 / V.k));
-      ctx.fillStyle = col.moire === 3 ? colors['moire-high'] : colors['moire-mid'];
-      ctx.fill();
-    }
+  }
+  // Moiré band on the stage side of the face: wide, and held clear of the wall by a
+  // gap so it reads separately from the hazard stripes. Labelled once per surface.
+  let moireMid = null;
+  for (const col of res.cols) {
+    if (col.moire < 2) continue;
+    poly(ctx, quad(col.u - du, col.u + du, -MOIRE_GAP / V.k, -(MOIRE_GAP + MOIRE_W) / V.k));
+    ctx.fillStyle = col.moire === 3 ? colors['moire-high'] : colors['moire-mid'];
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 0.6;
+    ctx.fill();
+    ctx.stroke();
+    if (!moireMid || Math.abs(col.u - 0.5) < Math.abs(moireMid.u - 0.5)) moireMid = col;
+  }
+  if (moireMid) {
+    const p = face(moireMid.u), off = (MOIRE_GAP + MOIRE_W + 9) / V.k;
+    label(ctx, moireMid.moire === 3 ? 'Moiré high' : 'Moiré', V.X(p.x + p.nx * off), V.Y(p.z + p.nz * off),
+      colors[moireMid.moire === 3 ? 'moire-high' : 'moire-mid'], 'center');
   }
   ctx.beginPath();
   const n = 80;
@@ -737,7 +753,7 @@ function drawCeilPlan(ctx, V, res) {
     const e = res.cells[i][j];
     if (!e.visible) continue;
     poly(ctx, [at(i / n, j / m), at((i + 1) / n, j / m), at((i + 1) / n, (j + 1) / m), at(i / n, (j + 1) / m)]);
-    ctx.globalAlpha = e.inFocus ? 0.75 : 0.28;
+    ctx.globalAlpha = e.inFocus ? 0.75 : e.moire >= 2 ? 0.7 : 0.28;
     ctx.fillStyle = e.inFocus ? hazard(ctx) : e.moire >= 2 ? colors['moire-mid'] : colors.ceil;
     ctx.fill();
   }
@@ -1042,7 +1058,7 @@ function drawSide(o) {
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0 + 0.5);
       if (e.moire >= 2) {
         ctx.fillStyle = e.moire === 3 ? colors['moire-high'] : colors['moire-mid'];
-        ctx.fillRect(x0 - 5, y0, 3.5, y1 - y0 + 0.5);
+        ctx.fillRect(x0 - MOIRE_GAP - MOIRE_W, y0, MOIRE_W, y1 - y0 + 0.5);
       }
     }
     ctx.strokeStyle = colors.text;
