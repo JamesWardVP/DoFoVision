@@ -436,21 +436,26 @@ const nearestStopIdx = N => {
   return best;
 };
 
-// Drag the near limit, far limit or focus plane to axial depth d. Near keeps the
-// far limit where it is (and vice versa); the focus distance and aperture that
-// give those limits are worked out and the aperture snaps to the nearest third stop.
+// Drag the near limit, far limit or focus point to axial depth d.
+// Near and far work like opening up or stopping down on set: the focus stays
+// where it is, the aperture that puts the dragged limit at d is worked out
+// (rounded to the nearest third stop), and the other limit follows.
+// Dragging the focus point moves the focus and keeps the aperture.
 function dragDepth(which, d) {
   const o = lastO;
   if (!o) return;
   d = clamp(d, o.f * 3, 1000);
-  state.focusAuto = false;
-  if (which === 'focus') { state.focus = +d.toFixed(2); return; }
-  let near = o.near, far = o.far;
-  if (which === 'near') near = Math.min(d, isFinite(far) ? far * 0.97 : d);
-  else far = d > 200 ? Infinity : Math.max(d, near * 1.03);
-  const r = Optics.focusForLimits(o.f, o.c, near, far);
-  state.fstopIdx = nearestStopIdx(r.N);
-  state.focus = +clamp(r.s, 0.3, 60).toFixed(2);
+  if (which === 'focus') { state.focusAuto = false; state.focus = +clamp(d, 0.3, 60).toFixed(2); return; }
+  const s = o.s;
+  let N;
+  if (which === 'near') {
+    N = Optics.stopForNearLimit(o.f, o.c, s, Math.min(d, s * 0.98));
+  } else if (d > 200) {
+    N = (o.f * o.f) / (o.c * (s - o.f)); // far limit at infinity: focus at the hyperfocal distance
+  } else {
+    N = Optics.stopForFarLimit(o.f, o.c, s, Math.max(d, s * 1.02));
+  }
+  state.fstopIdx = nearestStopIdx(N);
 }
 
 /* ------------------------------------------------------------------ */
@@ -840,14 +845,16 @@ function drawTop(o) {
   if (adv) tag(o.H, 'hyper', 'Hyperfocal ' + fmtM(o.H), 1, false);
   if (isFinite(o.far)) tag(o.far, 'far', 'Far ' + fmtM(o.far), -1, true);
   tag(o.near, 'near', 'Near ' + fmtM(o.near), 1, true);
+  tag(o.s, 'focus', '', 1, true); // the point of focus on the lens axis
 
   // Focus plane: label and grab point at the edge of frame
   const fp = at(o.s, 1);
   const [fx, fy] = P(fp);
   if (mw.clearance(fp.x, fp.z) > 0) {
     label(ctx, 'Focus ' + fmtM(o.s), fx + 8, fy, colors.focus);
+    // The edge of the focus line is a second grab point (the axis one can sit under the talent).
     if (isActive('top', 'focus')) grabRing(ctx, fx, fy, colors.focus);
-    H.push({ id: 'focus', x: fx, y: fy });
+    H.push({ id: 'focus', x: fx, y: fy, alt: true });
   }
 
   // Subject (top-down person: shoulders + head, facing the camera)
@@ -903,8 +910,11 @@ function drawTop(o) {
     layout.push({ id: 'ceil:move', x, y }, { id: 'ceil:size', x: V.X(k.x), y: V.Y(k.z) });
   }
 
-  // Grab priority: camera, subject, depth of field, then layout handles.
-  handles.top = [{ id: 'camera', x: cx, y: cy }, { id: 'subject', x: sx, y: sy }, ...H, ...layout];
+  // Grab priority: camera, subject, depth of field, then layout handles. When the
+  // focus point sits under the talent (focus on the talent), it is grabbed at the
+  // end of the focus line instead, so the talent stays easy to move.
+  const clear = hd => hd.id !== 'focus' || hd.alt || Math.hypot(hd.x - sx, hd.y - sy) > grabR();
+  handles.top = [{ id: 'camera', x: cx, y: cy }, { id: 'subject', x: sx, y: sy }, ...H.filter(clear), ...layout];
 }
 
 /* ------------------------------------------------------------------ */
@@ -1112,10 +1122,10 @@ function drawSide(o) {
   tag(o.H, 'hyper', 'Hyperfocal', -14, false);
   if (isFinite(o.far)) tag(o.far, 'far', 'Far', 16, true);
   tag(o.near, 'near', 'Near', 16, true);
+  tag(o.s, 'focus', '', 0, true); // the point of focus on the lens axis
   const [fx, fy] = at(o.s, 1);
   label(ctx, 'Focus', fx, fy - 10, colors.focus, 'center');
-  HS.push({ id: 'focus', x: fx, y: fy });
-  if (isActive('side', 'focus')) grabRing(ctx, fx, fy, colors.focus);
+  HS.push({ id: 'focus', x: fx, y: fy, alt: true }); // edge of the focus line: a second grab point
 
   // Subject silhouette (side-on), facing the camera
   const sh = state.subH;
@@ -1148,7 +1158,12 @@ function drawSide(o) {
   drawCamera(ctx, cx, cy, -tilt, isActive('side', 'camera'));
   label(ctx, `Tilt ${(tilt * 180 / Math.PI).toFixed(1)}°`, cx + 4, cy - 22, colors.muted);
 
-  handles.side = [{ id: 'aim', x: ax, y: ay }, { id: 'camera', x: cx, y: cy }, ...HS];
+  // Talent handle at the top of the head: left/right = distance, up/down = height.
+  const tx = V.X(subDist), ty = V.Y(sh);
+  if (isActive('side', 'subject')) grabRing(ctx, tx, ty, colors.focus);
+  // The focus point under the aim point is grabbed at the end of the focus line instead.
+  const clear = hd => hd.id !== 'focus' || hd.alt || Math.hypot(hd.x - ax, hd.y - ay) > grabR();
+  handles.side = [{ id: 'aim', x: ax, y: ay }, { id: 'camera', x: cx, y: cy }, { id: 'subject', x: tx, y: ty }, ...HS.filter(clear)];
 }
 
 /* ------------------------------------------------------------------ */
@@ -1645,8 +1660,21 @@ function applyDrag(which, target, sx, sy) {
   if (['near', 'far', 'focus'].includes(target)) { dragDepth(target, depthAt(which, sx, sy)); return; }
   if (which === 'side') {
     const y = +sideView.B(sy).toFixed(2);
-    if (target === 'camera') { state.camY = y; return; }
     if (target === 'aim') { state.aimH = y; return; }
+    if (target === 'camera' || target === 'subject') {
+      // Left/right moves along the line of sight; up/down is lens height or talent height.
+      const { V, s0, y0, hx, hz, start } = drag;
+      const ds = V.A(sx) - s0, dy = V.B(sy) - y0;
+      const r2 = v => +v.toFixed(2);
+      if (target === 'camera') {
+        state.camX = r2(start.camX + hx * ds); state.camZ = r2(start.camZ + hz * ds);
+        state.camY = r2(start.camY + dy);
+      } else {
+        state.subX = r2(start.subX + hx * ds); state.subZ = r2(start.subZ + hz * ds);
+        state.subH = r2(start.subH + dy);
+      }
+      return;
+    }
     // Layout in the side view: left/right is back/forward along the line of sight.
     // Measured against the view as it was when the drag began, because the view
     // rescales as things move.
@@ -1694,7 +1722,7 @@ function applyDrag(which, target, sx, sy) {
 
 const HINTS = {
   camera: 'Moving the camera', subject: 'Moving the talent', aim: 'Moving the aim point',
-  near: 'Dragging the near limit: focus and aperture follow', far: 'Dragging the far limit: focus and aperture follow',
+  near: 'Dragging the near limit: the aperture follows, focus stays put', far: 'Dragging the far limit: the aperture follows, focus stays put',
   focus: 'Dragging the focus distance',
   'wall:side': 'Moving the LED wall: left/right = back/forward, up/down = bottom edge', 'ceil:side': 'Moving the ceiling: left/right = back/forward, up/down = height',
 };
@@ -1721,6 +1749,7 @@ function setupDrag(cv, which) {
       drag.hz = lastO.cb.heading.z;
       drag.start = kind === 'wild' ? { ...state.wild[+idx] }
         : kind === 'ceil' ? { ...state.ceil }
+        : kind === 'camera' || kind === 'subject' ? { camX: state.camX, camZ: state.camZ, camY: state.camY, subX: state.subX, subZ: state.subZ, subH: state.subH }
         : { wallZ: state.wallZ, wallBottom: state.wallBottom, pts: state.wallPts.map(p => ({ ...p })) };
     }
     cv.setPointerCapture(e.pointerId);

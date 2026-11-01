@@ -32,6 +32,13 @@ const Optics = (() => {
     return (f * f) / (c * (H - f));
   }
 
+  // f-number at which the near limit lands exactly on distance d (d < s), focus unchanged.
+  // From near = s·h / (h + s − f) with h = H − f:  h = d(s − f)/(s − d),  N = f²/(c·h).
+  function stopForNearLimit(f, c, s, d) {
+    const h = (d * (s - f)) / (s - d);
+    return (f * f) / (c * h);
+  }
+
   // Furthest focus distance whose far limit stays in front of D.
   function maxFocusForFarLimit(f, N, c, D) {
     const H = (f * f) / (N * c) + f;
@@ -321,7 +328,7 @@ const Optics = (() => {
   }
 
   return {
-    dof, blurDiameter, imageDistance, stopForFarLimit, maxFocusForFarLimit, focusForLimits,
+    dof, blurDiameter, imageDistance, stopForFarLimit, stopForNearLimit, maxFocusForFarLimit, focusForLimits,
     besselJ1, defocusContrast, moireLevel, SAFE_BLUR_RATIO, BAYER_LIMIT,
     wallShape, wallPlan, wallU, rayWall, frontClearance, keepInFront,
     polyBuild, polyAt, rayPoly, polyClearance, polyKeepInFront, arcPoints, panelPoints,

@@ -219,3 +219,15 @@ test('panels, rectangles and the ray-through-rectangle interval', () => {
   iv = O.rayConvexInterval(O.rectCorners(0, 5, 4, 2, 90), 0, 0, 0, 1);
   close(iv[0], 3, 1e-12); close(iv[1], 7, 1e-12);
 });
+
+test('stopForNearLimit puts the near limit on the requested distance, focus unchanged', () => {
+  // Round trip: 50 mm f/2.8 focused at 3 m has its near limit at 2.7294 m (DOFMaster).
+  close(O.stopForNearLimit(0.05, 0.00003, 3, 2.7294), 2.8, 2e-3, 'f/2.8 back from DOFMaster near');
+  // Hand check: h = d(s − f)/(s − d) = 2·(4 − 0.035)/(4 − 2) = 3.965 m,
+  // N = f²/(c·h) = 0.001225/(0.000025·3.965) = 12.358.
+  close(O.stopForNearLimit(0.035, 0.000025, 4, 2), 12.358, 1e-3, 'hand-derived N');
+  for (const [f, c, s, d] of [[0.035, 0.000025, 4, 3.2], [0.085, 0.00003, 2, 1.7], [0.024, 0.00002, 6, 2.5]]) {
+    const N = O.stopForNearLimit(f, c, s, d);
+    close(O.dof(f, N, c, s).near, d, 1e-9, 'near lands on d');
+  }
+});

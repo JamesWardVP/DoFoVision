@@ -113,11 +113,18 @@ async function launch() {
     const ceil = o.results.find(x => x.S.kind === 'h');
     out.ceilVisible = ceil.visible > 0; out.ceilMin = ceil.minDepth;
 
-    // Dragging the far limit to 6 m (near fixed) lands it there, to within a third of a stop.
+    // Dragging the far limit to 6 m lands it there (to within a third of a stop),
+    // keeping the focus where it was; same for the near limit.
     o = run({ focusAuto: false, focus: 3, fstopIdx: FSTOPS.indexOf(2.8) });
-    lastO = o; const near0 = o.near;
+    lastO = o;
     dragDepth('far', 6); o = compute();
-    out.dragNear = [near0, o.near]; out.dragFar = o.far; out.dragStop = FSTOPS[state.fstopIdx];
+    out.dragFar = o.far; out.dragFarFocus = o.s; out.dragStop = FSTOPS[state.fstopIdx];
+    lastO = o;
+    dragDepth('near', 2.5); o = compute();
+    out.dragNear = o.near; out.dragNearFocus = o.s; out.dragNearStop = FSTOPS[state.fstopIdx];
+    lastO = o;
+    dragDepth('focus', 4.2); o = compute();
+    out.dragFocus = [state.focus, state.focusAuto, FSTOPS[state.fstopIdx]];
 
     state = structuredClone(DEFAULTS); state.mode = 'advanced'; update();
     return out;
@@ -131,8 +138,12 @@ async function launch() {
   check(near(r.customMin, 5, 1e-9), `two-point custom wall straight-on = 5 m (got ${r.customMin})`);
   check(near(r.wildMin, 2, 1e-6) && r.wildName === 'Wild wall 1', `wild wall facing the camera at 2 m (got ${r.wildMin})`);
   check(r.ceilVisible && r.ceilMin > 0 && r.ceilMin < 2, `LED ceiling is analysed (nearest ${r.ceilMin.toFixed(3)} m)`);
-  check(Math.abs(r.dragFar - 6) / 6 < 0.12 && Math.abs(r.dragNear[1] - r.dragNear[0]) / r.dragNear[0] < 0.05,
-    `dragging the far limit to 6 m → far ${r.dragFar.toFixed(2)} m, near ${r.dragNear[0].toFixed(2)} → ${r.dragNear[1].toFixed(2)} m at f/${r.dragStop}`);
+  check(Math.abs(r.dragFar - 6) / 6 < 0.12 && r.dragFarFocus === 3,
+    `dragging the far limit to 6 m → far ${r.dragFar.toFixed(2)} m at f/${r.dragStop}, focus stays 3 m`);
+  check(Math.abs(r.dragNear - 2.5) / 2.5 < 0.06 && r.dragNearFocus === 3,
+    `dragging the near limit to 2.5 m → near ${r.dragNear.toFixed(2)} m at f/${r.dragNearStop}, focus stays 3 m`);
+  check(r.dragFocus[0] === 4.2 && r.dragFocus[1] === false && r.dragFocus[2] === r.dragNearStop,
+    `dragging the focus point → focus ${r.dragFocus[0]} m, aperture unchanged`);
 
   console.log('Controls');
   await page.fill('#sensorW', '30');
@@ -230,6 +241,24 @@ async function launch() {
   check(behind.wild !== undefined && behind.wild < behind.cam, `wild wall behind the camera is drawn behind it (x ${behind.wild?.toFixed(0)} < camera ${behind.cam.toFixed(0)})`);
   check(behind.ceilSpan[0] < 0 && behind.ceilSpan[1] > 0, `a ceiling over the camera is shown both sides of it (${behind.ceilSpan.map(v => v.toFixed(1))} m)`);
   check(await sideDrag('wild:0:side', -30, 0), 'the wild wall behind the camera can be dragged');
+
+  // Side view: the camera and the talent move along the line of sight and up/down.
+  await page.evaluate(() => {
+    Object.assign(state, structuredClone(DEFAULTS), { mode: 'advanced', camX: 0, camZ: 7, camY: 1.5, subX: 0, subZ: 4, aimH: 1.6, subH: 1.8, focusAuto: false, focus: 3 });
+    rebuildLists(); update();
+  });
+  const cam0 = await page.evaluate(() => [state.camZ, state.camY]);
+  await sideDrag('camera', -40, -30);
+  const cam1 = await page.evaluate(() => [state.camZ, state.camY]);
+  check(cam1[0] > cam0[0] && cam1[1] > cam0[1], `side view: camera moves back and up (z ${cam0[0]} → ${cam1[0]}, height ${cam0[1]} → ${cam1[1]})`);
+  const sub0 = await page.evaluate(() => [state.subZ, state.subH]);
+  check(await sideDrag('subject', 40, -20), 'side view has a talent handle');
+  const sub1 = await page.evaluate(() => [state.subZ, state.subH]);
+  check(sub1[0] < sub0[0] && sub1[1] > sub0[1], `side view: talent moves toward the wall and taller (z ${sub0[0]} → ${sub1[0]}, height ${sub0[1]} → ${sub1[1]})`);
+  const fx0 = await page.evaluate(() => state.focus);
+  check(await sideDrag('focus', 30, 0), 'side view has a focus point handle');
+  const fx1 = await page.evaluate(() => state.focus);
+  check(fx1 > fx0, `side view: dragging the focus point moves the focus (${fx0} → ${fx1} m)`);
 
   await browser.close();
   console.log(failures ? `\n${failures} check(s) failed` : `\nAll checks passed. Screenshots in screenshots/`);
