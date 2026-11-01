@@ -15,7 +15,7 @@ Users can:
 - add **wild walls** (freestanding flat panels: position, angle, size) and an **LED ceiling** (rectangle: position, size, angle, height, own pitch)
 - pick a camera or sensor format, or enter a custom sensor size and resolution
 - drag the camera and the subject (a person), custom-wall corners, wild walls (move / turn) and the ceiling (move / resize) in the top view; in the side view, drag the camera, the talent, walls and the ceiling back / forward along the line of sight and up / down. Surfaces the line of sight misses are drawn dashed "off to the side" (or "behind the camera"); the view extends behind the camera to fit them. The flat/curved wall's back/forward offset is `wallZ`; a custom wall's points move instead.
-- drag the **near or far limit**: the focus stays, the aperture is solved to put the limit there (`Optics.stopForNearLimit` / `stopForFarLimit`, rounded to a third stop); drag the **focus point** (axis marker or the end of the focus line) to move the focus. Both views.
+- drag the **near or far limit**: the focus stays, the aperture is solved to put the limit there (`Optics.stopForNearLimit` / `stopForFarLimit`) and stored de-clicked in `state.fstop` (read it through `apertureN()`; `fstopIdx` keeps the nearest third stop for the slider, and any stop control clears `fstop`); drag the **focus point** (axis marker or the end of the focus line) to move the focus. Both views.
 - set focal length, aperture, focus distance and circle of confusion
 
 ## Commands

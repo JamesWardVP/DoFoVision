@@ -118,13 +118,16 @@ async function launch() {
     o = run({ focusAuto: false, focus: 3, fstopIdx: FSTOPS.indexOf(2.8) });
     lastO = o;
     dragDepth('far', 6); o = compute();
-    out.dragFar = o.far; out.dragFarFocus = o.s; out.dragStop = FSTOPS[state.fstopIdx];
+    out.dragFar = o.far; out.dragFarFocus = o.s; out.dragStop = apertureN();
     lastO = o;
     dragDepth('near', 2.5); o = compute();
-    out.dragNear = o.near; out.dragNearFocus = o.s; out.dragNearStop = FSTOPS[state.fstopIdx];
+    out.dragNear = o.near; out.dragNearFocus = o.s; out.dragNearStop = apertureN();
     lastO = o;
     dragDepth('focus', 4.2); o = compute();
-    out.dragFocus = [state.focus, state.focusAuto, FSTOPS[state.fstopIdx]];
+    out.dragFocus = [state.focus, state.focusAuto, apertureN()];
+    // A stop control goes back to whole third stops.
+    set('fstopIdx', FSTOPS.indexOf(4));
+    out.afterStop = [state.fstop, apertureN()];
 
     state = structuredClone(DEFAULTS); state.mode = 'advanced'; update();
     return out;
@@ -138,12 +141,13 @@ async function launch() {
   check(near(r.customMin, 5, 1e-9), `two-point custom wall straight-on = 5 m (got ${r.customMin})`);
   check(near(r.wildMin, 2, 1e-6) && r.wildName === 'Wild wall 1', `wild wall facing the camera at 2 m (got ${r.wildMin})`);
   check(r.ceilVisible && r.ceilMin > 0 && r.ceilMin < 2, `LED ceiling is analysed (nearest ${r.ceilMin.toFixed(3)} m)`);
-  check(Math.abs(r.dragFar - 6) / 6 < 0.12 && r.dragFarFocus === 3,
+  check(Math.abs(r.dragFar - 6) / 6 < 0.005 && r.dragFarFocus === 3,
     `dragging the far limit to 6 m → far ${r.dragFar.toFixed(2)} m at f/${r.dragStop}, focus stays 3 m`);
-  check(Math.abs(r.dragNear - 2.5) / 2.5 < 0.06 && r.dragNearFocus === 3,
+  check(Math.abs(r.dragNear - 2.5) / 2.5 < 0.005 && r.dragNearFocus === 3,
     `dragging the near limit to 2.5 m → near ${r.dragNear.toFixed(2)} m at f/${r.dragNearStop}, focus stays 3 m`);
   check(r.dragFocus[0] === 4.2 && r.dragFocus[1] === false && r.dragFocus[2] === r.dragNearStop,
     `dragging the focus point → focus ${r.dragFocus[0]} m, aperture unchanged`);
+  check(r.afterStop[0] === 0 && r.afterStop[1] === 4, `a stop control returns to whole third stops (f/${r.afterStop[1]})`);
 
   console.log('Controls');
   await page.fill('#sensorW', '30');

@@ -73,7 +73,7 @@ const DEFAULTS = {
   camX: 0, camZ: 7, camY: 1.5,
   subX: 0.5, subZ: 4, subH: 1.8, aimH: 1.6,
   body: 'alexa35', sensorW: 27.99, sensorH: 19.22, resH: 4608,
-  focal: 35, fstopIdx: FSTOPS.indexOf(2.8),
+  focal: 35, fstopIdx: FSTOPS.indexOf(2.8), fstop: 0, // fstop > 0: exact (de-clicked) f-number from dragging near/far
   focusAuto: true, focus: 3,
   cocAuto: true, coc: 0.025,
   stageDepth: 12,
@@ -107,7 +107,7 @@ const SLIDERS = {
   ],
   'ctl-lens': [
     { key: 'focal', label: 'Focal length', min: 8, max: 300, step: 1, unit: 'mm', log: true },
-    { key: 'fstopIdx', label: 'Aperture', min: 0, max: FSTOPS.length - 1, step: 1, format: i => 'f/' + FSTOPS[i] },
+    { key: 'fstopIdx', label: 'Aperture', min: 0, max: FSTOPS.length - 1, step: 1, format: () => fmtStop(apertureN()) },
     { key: 'focus', label: 'Focus distance', min: 0.3, max: 60, step: 0.01, unit: 'm', log: true },
   ],
   'ctl-subject': [
@@ -272,7 +272,7 @@ function compute() {
   const f = fmm / 1000;
   const cocMm = state.cocAuto ? Math.hypot(sen.w, sen.h) / 1500 : state.coc;
   const c = cocMm / 1000;
-  const N = FSTOPS[state.fstopIdx];
+  const N = apertureN();
 
   if (state.focusAuto) state.focus = cb.subjectDist;
   const s = Math.max(state.focus, f * 1.5);
@@ -430,6 +430,9 @@ function sightSections(o) {
 /* Depth of field dragging                                             */
 /* ------------------------------------------------------------------ */
 
+// The aperture in use: a de-clicked value set by dragging, else the chosen third stop.
+const apertureN = () => (state.fstop > 0 ? state.fstop : FSTOPS[state.fstopIdx]);
+
 const nearestStopIdx = N => {
   let best = 0;
   FSTOPS.forEach((n, i) => { if (Math.abs(Math.log(n / N)) < Math.abs(Math.log(FSTOPS[best] / N))) best = i; });
@@ -455,6 +458,8 @@ function dragDepth(which, d) {
   } else {
     N = Optics.stopForFarLimit(o.f, o.c, s, Math.max(d, s * 1.02));
   }
+  N = clamp(N, FSTOPS[0], FSTOPS[FSTOPS.length - 1]);
+  state.fstop = +N.toFixed(3); // de-clicked: the limit follows the pointer smoothly
   state.fstopIdx = nearestStopIdx(N);
 }
 
@@ -1439,8 +1444,14 @@ function buildControls() {
   const stops = document.getElementById('s-stops');
   stops.innerHTML = FULL_STOPS.map(n => `<button type="button" class="chip" data-stop="${n}">${n}</button>`).join('');
   stops.addEventListener('click', e => { const b = e.target.closest('[data-stop]'); if (b) set('fstopIdx', FSTOPS.indexOf(+b.dataset.stop)); });
-  document.getElementById('s-stop-down').addEventListener('click', () => set('fstopIdx', state.fstopIdx - 1));
-  document.getElementById('s-stop-up').addEventListener('click', () => set('fstopIdx', state.fstopIdx + 1));
+  // −/+ go to the next third stop from wherever the aperture is, even a de-clicked value.
+  const stepStop = dir => {
+    const N = apertureN();
+    const i = dir < 0 ? FSTOPS.findLastIndex(n => n < N - 1e-6) : FSTOPS.findIndex(n => n > N + 1e-6);
+    if (i >= 0) set('fstopIdx', i);
+  };
+  document.getElementById('s-stop-down').addEventListener('click', () => stepStop(-1));
+  document.getElementById('s-stop-up').addEventListener('click', () => stepStop(1));
 
   rebuildLists();
 }
@@ -1516,6 +1527,7 @@ function rebuildLists() {
 function set(key, value) {
   state[key] = value;
   if (key === 'focus') state.focusAuto = false; // moving the focus slider takes manual control
+  if (key === 'fstopIdx') state.fstop = 0;     // stop slider, buttons and −/+ use whole third stops
   if (key === 'wildOn' && value && !state.wild.length) { state.wild.push(NEW_WILD()); rebuildLists(); }
   update();
 }
@@ -1530,6 +1542,7 @@ function normalise() {
   }
   if (s.mode !== 'simple' && s.mode !== 'advanced') s.mode = DEFAULTS.mode;
   s.fstopIdx = Math.round(clamp(s.fstopIdx, 0, FSTOPS.length - 1));
+  s.fstop = s.fstop > 0 ? +clamp(s.fstop, FSTOPS[0], FSTOPS[FSTOPS.length - 1]).toFixed(3) : 0;
   s.curve = Math.round(s.curve);
 
   const cam = CAMERAS.find(c => c.id === s.body);
@@ -1620,11 +1633,11 @@ function sync(o) {
   // Simple mode: chips and the aperture readout
   document.querySelectorAll('#s-focal [data-focal]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.focal === state.focal)));
   document.getElementById('s-focal-val').textContent = state.focal + ' mm';
-  const N = FSTOPS[state.fstopIdx];
+  const N = apertureN();
   document.querySelectorAll('#s-stops [data-stop]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.stop === N)));
   document.getElementById('s-stop-val').textContent = fmtStop(N);
-  document.getElementById('s-stop-down').disabled = state.fstopIdx <= 0;
-  document.getElementById('s-stop-up').disabled = state.fstopIdx >= FSTOPS.length - 1;
+  document.getElementById('s-stop-down').disabled = N <= FSTOPS[0];
+  document.getElementById('s-stop-up').disabled = N >= FSTOPS[FSTOPS.length - 1];
 }
 
 /* ------------------------------------------------------------------ */
